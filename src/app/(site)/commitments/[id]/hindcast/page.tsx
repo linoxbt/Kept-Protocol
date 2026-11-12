@@ -24,8 +24,8 @@ async function Hindcast({ params }: { params: Promise<{ id: string }> }) {
   const [run, admin] = await Promise.all([latestHindcast(id), isAdminSession()]);
   return (
     <div>
-      <Link href={`/commitments/${id}`} className="text-sm text-muted hover:text-ink">← commitment</Link>
-      <h1 className="text-2xl font-semibold mt-3 mb-1">Hindcast</h1>
+      <Link href={`/commitments/${id}`} className="label u !text-muted hover:!text-ink">← commitment</Link>
+      <h1 className="title mt-6 mb-4">Hindcast</h1>
       <p className="text-sm text-muted mb-6 max-w-3xl">
         Under each version of the promise, what would Kept have shown on each date, and what changed it? Same evidence, same code. A replay never implies the
         outcome was predictable, and a gap in evidence is shown as a gap.

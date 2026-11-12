@@ -37,9 +37,9 @@ async function Receipt({ params }: { params: Promise<{ id: string }> }) {
   const dev = isDevSigner(b.signer);
   return (
     <div className="max-w-4xl">
-      {b.commitment_id ? <Link href={`/commitments/${b.commitment_id}`} className="text-sm text-muted hover:text-ink">← commitment</Link> : null}
+      {b.commitment_id ? <Link href={`/commitments/${b.commitment_id}`} className="label u !text-muted hover:!text-ink">← commitment</Link> : null}
       <div className="flex flex-wrap items-center gap-3 mt-3 mb-6">
-        <h1 className="text-2xl font-semibold">Receipt</h1>
+        <h1 className="title">Receipt</h1>
         <span className="mono text-xs border border-line px-2 py-0.5">{b.kind}{b.kind === "hindcast" ? " · replay, not a live check" : ""}</span>
         {dev ? <span className="mono text-xs border border-atrisk text-atrisk px-2 py-0.5">development key — proves nothing</span> : null}
       </div>

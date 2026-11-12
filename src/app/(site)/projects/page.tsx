@@ -12,7 +12,7 @@ export const metadata = { title: "Projects" };
 export default function ProjectsPage() {
   return (
     <div>
-      <h1 className="text-2xl font-semibold mb-1">Projects</h1>
+      <h1 className="title mb-4">Projects</h1>
       <p className="text-muted text-sm mb-6">Every project Kept monitors, with the status of each commitment.</p>
       <Suspense fallback={<Skeleton h={320} />}>
         <Directory />

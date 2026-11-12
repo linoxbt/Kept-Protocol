@@ -39,8 +39,8 @@ async function Review({ params }: { params: Promise<{ id: string }> }) {
   pieces.push(text.slice(at));
   return (
     <div>
-      <Link href="/admin" className="text-sm text-muted hover:text-ink">← admin</Link>
-      <h1 className="text-2xl font-semibold mt-3 mb-1">Review extraction</h1>
+      <Link href="/admin" className="label u !text-muted hover:!text-ink">← admin</Link>
+      <h1 className="title mt-6 mb-4">Review extraction</h1>
       <p className="text-sm text-muted mb-2 mono">{ex.id} · {ex.result.serv_calls} SERV calls{ex.result.manual ? " · manual draft" : ""}</p>
       {ex.target_commitment_id ? <p className="text-sm text-atrisk mb-4">This extraction comes from a changed source and proposes a new version of <Link className="link" href={`/commitments/${ex.target_commitment_id}`}>{ex.target_commitment_id}</Link>. A policy change becomes current only when you confirm it.</p> : null}
       <div className="flex flex-wrap gap-1.5 mb-6">{ex.result.source_flags.map((f) => <Flag key={f} name={f} />)}</div>

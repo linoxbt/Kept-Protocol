@@ -16,18 +16,19 @@ export function statusColor(s: Status): string {
   return COLOR[s] ?? "var(--color-pending)";
 }
 
-/** Status colours carry meaning and nothing else. "Verified to date" and "Verified, final" never blur. */
+/** Status is a dot plus words. "Verified to date" and "Verified, final" never blur. */
 export function StatusChip({ status, final, size = "sm" }: { status: Status; final?: boolean; size?: "sm" | "lg" }) {
   const c = statusColor(status);
-  const label = status === "verified" ? (final ? "Verified, final" : "Verified to date") : status === "breached" ? "Breached" : STATUS_LABEL[status];
+  const label = status === "verified" ? (final ? "Verified, final" : "Verified to date") : STATUS_LABEL[status];
+  const lg = size === "lg";
   return (
     <span
-      className={`mono inline-flex items-center gap-1.5 border whitespace-nowrap ${size === "lg" ? "text-base px-3 py-1.5" : "text-xs px-2 py-0.5"}`}
-      style={{ color: c, borderColor: c, background: `color-mix(in srgb, ${c} 10%, transparent)` }}
+      className={`mono inline-flex items-center gap-2 whitespace-nowrap rounded-full border ${lg ? "text-[15px] px-4 h-10" : "text-[12px] px-2.5 h-6"}`}
+      style={{ borderColor: `color-mix(in srgb, ${c} 35%, transparent)`, color: "var(--color-ink)" }}
     >
-      <span className="inline-block rounded-full" style={{ width: size === "lg" ? 8 : 6, height: size === "lg" ? 8 : 6, background: c }} />
+      <span className="rounded-full shrink-0" style={{ width: lg ? 8 : 6, height: lg ? 8 : 6, background: c, boxShadow: `0 0 12px ${c}` }} />
       {label}
-      {final && status !== "verified" ? <span className="opacity-70">· final</span> : null}
+      {final && status !== "verified" ? <span className="text-muted">· final</span> : null}
     </span>
   );
 }

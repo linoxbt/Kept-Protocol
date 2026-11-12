@@ -10,7 +10,7 @@ export const metadata = { title: "Grifter — adversarial testing" };
 export default function GrifterPage() {
   return (
     <div>
-      <h1 className="text-2xl font-semibold mb-1">Grifter</h1>
+      <h1 className="title mb-4">Grifter</h1>
       <p className="text-sm text-muted mb-8 max-w-3xl">
         Grifter attacks Kept&apos;s own pipeline, never third parties. Each extraction case replays a <em>fooled model</em> — the worst plausible SERV output for
         the trap — to prove that Kept&apos;s code catches it even when the model does not. Chain cases run on an in-memory fixture chain. A prompt or method

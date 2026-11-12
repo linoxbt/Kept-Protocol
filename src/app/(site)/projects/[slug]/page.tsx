@@ -26,7 +26,7 @@ async function Project({ params }: { params: Promise<{ slug: string }> }) {
   return (
     <div>
       <div className="flex flex-wrap items-center gap-3 mb-2">
-        <h1 className="text-2xl font-semibold">{project.name}</h1>
+        <h1 className="title">{project.name}</h1>
         {project.is_demo ? <DemoBadge /> : null}
         <span className="mono text-xs text-muted border border-line px-1.5 py-0.5">registration: {project.registration_level}</span>
       </div>

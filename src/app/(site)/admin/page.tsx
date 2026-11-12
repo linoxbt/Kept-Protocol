@@ -42,7 +42,7 @@ async function Admin() {
   return (
     <div>
       <div className="flex items-center gap-4 mb-6">
-        <h1 className="text-2xl font-semibold">Admin console</h1>
+        <h1 className="title">Admin console</h1>
         <form method="post" action="/api/admin/logout"><button className="btn btn-quiet text-xs">sign out</button></form>
       </div>
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-px bg-line proof mb-10 text-sm">

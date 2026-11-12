@@ -22,7 +22,7 @@ export default function Docs() {
   const e = env();
   return (
     <div className="max-w-4xl">
-      <h1 className="text-2xl font-semibold mb-1">API</h1>
+      <h1 className="title mb-4">API</h1>
       <p className="text-sm text-muted mb-8">
         REST over HTTPS, JSON, versioned under <span className="mono">/v1</span>. Machine-readable spec: <a className="link mono" href="/api/v1/openapi.json">/api/v1/openapi.json</a>. Agent
         identity: <a className="link mono" href="/.well-known/agent-card.json">/.well-known/agent-card.json</a>.

@@ -21,7 +21,7 @@ async function Demo({ params }: { params: Promise<{ slug: string }> }) {
   return (
     <article className="max-w-3xl">
       <p className="mono text-xs border border-disputed text-disputed inline-block px-2 py-0.5 mb-6">DEMO PROJECT PAGE — hosted by Kept, not a real team</p>
-      <h1 className="text-3xl font-semibold mb-2">{page.title}</h1>
+      <h1 className="title mb-3">{page.title}</h1>
       <p className="text-xs text-muted mono mb-8">last edited {fmtDate(page.updated_at, true)}</p>
       <div className="whitespace-pre-wrap leading-relaxed">{page.body}</div>
     </article>

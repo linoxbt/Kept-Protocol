@@ -15,8 +15,8 @@ export function ago(d: Date | string | null | undefined): string {
 
 export function Section({ title, children, aside }: { title: string; children: React.ReactNode; aside?: React.ReactNode }) {
   return (
-    <section className="mb-10">
-      <div className="flex items-baseline justify-between mb-3 gap-4">
+    <section className="mb-14">
+      <div className="flex items-baseline justify-between mb-5 gap-4 border-t border-line pt-4">
         <h2 className="label">{title}</h2>
         {aside}
       </div>
@@ -30,17 +30,17 @@ export function Skeleton({ h = 120 }: { h?: number }) {
 }
 
 export function Empty({ children }: { children: React.ReactNode }) {
-  return <div className="panel p-6 text-sm text-muted">{children}</div>;
+  return <div className="border border-line p-8 text-sm text-muted">{children}</div>;
 }
 
 export function DemoBadge() {
-  return <span className="mono text-[10px] uppercase tracking-wider border border-disputed text-disputed px-1.5 py-0.5">demo project</span>;
+  return <span className="mono text-[10px] uppercase tracking-[0.12em] rounded-full border border-disputed/50 text-disputed px-2 py-0.5">demo project</span>;
 }
 
 export function Flag({ name }: { name: string }) {
   const severe = /UNGROUNDED|INJECTION|INSTRUCTIONS|LOOKALIKE|INVALID|MISMATCH|THIRD_PARTY|CONTRADICTION/.test(name);
   return (
-    <span className={`mono text-[10px] px-1.5 py-0.5 border ${severe ? "border-atrisk text-atrisk" : "border-line text-muted"}`}>{name}</span>
+    <span className={`mono text-[10px] px-2 py-0.5 rounded-full border ${severe ? "border-atrisk/50 text-atrisk" : "border-line-strong text-muted"}`}>{name}</span>
   );
 }
 

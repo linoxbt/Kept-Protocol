@@ -34,8 +34,8 @@ async function Diff({ params, searchParams }: { params: Promise<{ id: string }>;
   const w = (s: typeof d.from.spec) => ({ start: Date.parse(s.window.start) / 1000, end: Date.parse(s.window.end) / 1000 });
   return (
     <div>
-      <Link href={`/commitments/${id}`} className="text-sm text-muted hover:text-ink">← commitment</Link>
-      <h1 className="text-2xl font-semibold mt-3 mb-1">How the promise changed: v{from} → v{to}</h1>
+      <Link href={`/commitments/${id}`} className="label u !text-muted hover:!text-ink">← commitment</Link>
+      <h1 className="title mt-6 mb-4">How the promise changed: v{from} → v{to}</h1>
       <p className="text-sm text-muted mb-8">
         Change classified as <span className="mono text-ink">{d.changeKind}</span>. v{to} was published {fmtDate(d.to.published_at, true)}. v{from} stays frozen; its record is never rewritten.
       </p>
