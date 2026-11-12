@@ -1,8 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getAddress, isAddress } from "viem";
-import { db } from "@/db/client";
-import { baseUrl } from "@/lib/http";
-import { newId } from "@/lib/ids";
+import { baseUrl, clientIp } from "@/lib/http";
 import { signBody } from "@/receipts/signer";
 import { agentLookup } from "@/services/queries";
 import { hit } from "@/services/ratelimit";
@@ -21,13 +19,11 @@ async function handler(req: NextRequest): Promise<NextResponse> {
   if (!isAddress(token, { strict: false }) || ![8453, 84532].includes(chainId)) {
     return NextResponse.json({ title: "Bad request", status: 400, detail: "chain_id must be 8453 or 84532 and token a valid address" }, { status: 400, headers: { "content-type": "application/problem+json" } });
   }
-  const payer = req.headers.get("x-payment") ? "x402" : "unknown";
-  const limit = await hit(`agent:${req.headers.get("x-forwarded-for") ?? "?"}`, 120, 60);
+  const limit = await hit(`agent:${clientIp(req)}`, 120, 60);
   if (!limit.allowed) return NextResponse.json({ title: "Too many requests", status: 429 }, { status: 429 });
   const data = await agentLookup(chainId, getAddress(token), baseUrl(req));
   const body = JSON.stringify(data);
   const { signature, signer } = await signBody(body);
-  await db()`insert into agent_payments (id, payer, network, amount, endpoint) values (${newId("kpay")}, ${payer}, ${process.env.X402_NETWORK ?? "eip155:84532"}, ${process.env.X402_PRICE ?? "$0.01"}, '/api/v1/agent/commitments')`;
   return new NextResponse(body, { status: 200, headers: { "content-type": "application/json", "kept-signature": signature, "kept-signer": signer, "cache-control": "no-store" } });
 }
 

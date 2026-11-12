@@ -39,7 +39,7 @@ export async function projectCommitments(projectId: string, sql: Sql = db()): Pr
     select c.id, c.status, c.final, c.status_reason, c.last_checked_at, v.version, v.spec
     from commitments c join commitment_versions v on v.id = c.current_version_id
     where c.project_id = ${projectId}
-    order by case c.status when 'breached' then 0 when 'at_risk' then 1 when 'pending' then 2 else 3 end, c.created_at`;
+    order by case c.status when 'breached' then 0 when 'at_risk' then 1 when 'disputed' then 2 when 'pending' then 3 when 'awaiting_evidence' then 3 else 4 end, c.created_at`;
 }
 
 export async function projectSources(projectId: string, sql: Sql = db()) {
@@ -145,7 +145,7 @@ export async function agentLookup(chainId: number, token: string, base: string, 
     join projects p on p.id = c.project_id
     left join lateral (select id, sha256, anchor_id from receipts where commitment_id = c.id order by created_at desc limit 1) r on true
     where (v.spec->>'chain_id')::int = ${chainId} and lower(v.spec->'token'->>'address') = ${token.toLowerCase()}`;
-  const coverage = rows.length === 0 ? "none" : rows.some((r) => r.status === "pending" || r.status === "unverifiable") ? "partial" : "full";
+  const coverage = rows.length === 0 ? "none" : rows.some((r) => r.status === "pending" || r.status === "awaiting_evidence" || r.status === "unverifiable") ? "partial" : "full";
   return {
     coverage,
     note: coverage === "none" ? "Kept has no record for this token. That is not evidence that it is clean." : undefined,

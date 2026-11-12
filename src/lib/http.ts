@@ -3,6 +3,7 @@
  * (Kept-Signature: EIP-191 over the SHA-256 of the body), Zod request parsing, idempotency and a
  * single error mapper so every endpoint fails the same way.
  */
+import { createHash, timingSafeEqual } from "node:crypto";
 import type { z } from "zod";
 import { db } from "@/db/client";
 import { CaptureError } from "@/extraction/capture";
@@ -52,9 +53,40 @@ export async function parseBody<T extends z.ZodType>(req: Request, schema: T): P
   return parsed.data;
 }
 
+/**
+ * The caller's IP, from headers a client cannot forge:
+ *  1. via the Netlify edge (proved by the shared KEPT_EDGE_TOKEN header the edge adds), Netlify's
+ *     own x-nf-client-connection-ip;
+ *  2. otherwise Railway's x-real-ip, which the platform sets to the connecting address;
+ *  3. otherwise the right-most X-Forwarded-For hop (appended by the nearest proxy).
+ * The left-most X-Forwarded-For entry is never used: the client writes it.
+ */
 export function clientIp(req: Request): string {
-  const fwd = req.headers.get("x-forwarded-for");
-  return (fwd?.split(",")[0] ?? req.headers.get("x-real-ip") ?? "unknown").trim();
+  return clientIpInfo(req).ip;
+}
+
+export function clientIpInfo(req: Request): { ip: string; source: "edge" | "real-ip" | "xff" | "none" } {
+  const token = process.env.KEPT_EDGE_TOKEN;
+  const given = req.headers.get("x-kept-edge");
+  if (token && given && given.length === token.length && timingSafeEqual(Buffer.from(given), Buffer.from(token))) {
+    const ip = req.headers.get("x-nf-client-connection-ip");
+    if (ip) return { ip: ip.trim(), source: "edge" };
+  }
+  const real = req.headers.get("x-real-ip");
+  if (real) return { ip: real.trim(), source: "real-ip" };
+  const xff = req.headers.get("x-forwarded-for");
+  if (xff) {
+    const hops = xff.split(",").map((s) => s.trim()).filter(Boolean);
+    if (hops.length) return { ip: hops[hops.length - 1], source: "xff" };
+  }
+  return { ip: "unknown", source: "none" };
+}
+
+/** Idempotency keys are scoped to the caller's credential, so one caller can never replay another's response. */
+function idempotencyScope(req: Request): string {
+  const auth = req.headers.get("authorization") ?? "";
+  const cookie = (req.headers.get("cookie") ?? "").match(/(?:^|;\s*)kept_session=([^;]*)/)?.[1] ?? "";
+  return createHash("sha256").update(`${auth}\n${cookie}`).digest("hex").slice(0, 32);
 }
 
 export function toProblem(e: unknown, instance?: string): Response {
@@ -78,10 +110,11 @@ type Handler<C> = (req: Request, ctx: C) => Promise<Response>;
 export function route<C>(handler: Handler<C>): Handler<C> {
   return async (req, ctx) => {
     const url = new URL(req.url);
-    const key = req.method === "POST" ? req.headers.get("idempotency-key") : null;
+    const raw = req.method === "POST" ? req.headers.get("idempotency-key") : null;
     try {
+      if (raw && raw.length > 200) throw new Problem(400, "Invalid Idempotency-Key", "keys are at most 200 characters");
+      const key = raw ? `${idempotencyScope(req)}:${raw}` : null;
       if (key) {
-        if (key.length > 200) throw new Problem(400, "Invalid Idempotency-Key", "keys are at most 200 characters");
         const [hitRow] = await db()<{ status: number; body: string }[]>`select status, body from idempotency_keys where key = ${key} and route = ${url.pathname}`;
         if (hitRow) return new Response(hitRow.body, { status: hitRow.status, headers: { "content-type": "application/json", "idempotent-replayed": "true" } });
       }

@@ -1,3 +1,4 @@
+import { cacheLife } from "next/cache";
 import { connection } from "next/server";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -5,7 +6,9 @@ import { Suspense } from "react";
 import { formatUnits } from "@/core/amounts";
 import { METHOD_LIMITATIONS } from "@/services/verify";
 import { Addr, Hash, Tx } from "@/components/addr";
-import { ActionButton } from "@/components/admin-actions";
+import { ActionButton, DisputeDecision } from "@/components/admin-actions";
+import { DisputeForm } from "@/components/dispute-form";
+import { listDisputes } from "@/services/disputes";
 import { StatusChip } from "@/components/status";
 import { TimeBar } from "@/components/timebar";
 import { ago, DemoBadge, fmtDate, nowSeconds, prettyReason, Section, Skeleton } from "@/components/ui";
@@ -28,10 +31,23 @@ const ATTR_LABEL: Record<string, string> = {
   unconfirmed: "unconfirmed",
 };
 
+/**
+ * The retroactive-revision banner compares the two latest versions. Versions never change once
+ * published, so the result is cached per (commitment, latest version) instead of recomputed on
+ * every view. Failures are not cached (they throw).
+ */
+async function retroFlags(commitmentId: string, versionCount: number, latestVersionId: string) {
+  "use cache";
+  cacheLife("hours");
+  void latestVersionId;
+  const r = await diffVersions(commitmentId, versionCount - 1, versionCount);
+  return r.retroactive.map((f) => ({ txHash: f.txHash, logIndex: f.logIndex, message: f.message }));
+}
+
 async function Commitment({ params }: { params: Promise<{ id: string }> }) {
   await connection();
   const { id } = await params;
-  const [d, admin] = await Promise.all([commitmentDetail(id), isAdminSession()]);
+  const [d, admin, disputes] = await Promise.all([commitmentDetail(id), isAdminSession(), listDisputes(id).catch(() => [])]);
   if (!d) notFound();
   const s = d.version.spec;
   const sym = s.token.symbol ?? "tokens";
@@ -40,7 +56,8 @@ async function Commitment({ params }: { params: Promise<{ id: string }> }) {
   const computed = lastCheck?.computed_value ? formatUnits(BigInt(lastCheck.computed_value), s.token.decimals) : "0";
   const threshold = formatUnits(BigInt(s.threshold_base_units), s.token.decimals);
   const highlight = d.snapshot.text.indexOf(s.excerpt);
-  const retro = d.versions.length > 1 ? (await diffVersions(d.commitment.id, d.versions.length - 1, d.versions.length).catch(() => null))?.retroactive ?? [] : [];
+  const latest = d.versions[d.versions.length - 1];
+  const retro = d.versions.length > 1 ? await retroFlags(d.commitment.id, d.versions.length, latest.id).catch(() => []) : [];
   const events = d.events.map((e) => ({
     t: Math.floor(new Date(e.block_time).getTime() / 1000),
     kind: e.kind as "violating" | "counted",
@@ -206,6 +223,31 @@ async function Commitment({ params }: { params: Promise<{ id: string }> }) {
           </div>
         </Section>
       </div>
+
+      <Section title="Disputes">
+        {disputes.length ? (
+          <ul className="panel divide-y divide-line text-sm mb-4">
+            {disputes.map((x) => (
+              <li key={x.id} className="p-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="mono text-xs">{x.id}</span>
+                  <span className={`mono text-[10px] border px-1 ${x.status === "accepted" ? "border-disputed text-disputed" : x.status === "open" ? "border-atrisk text-atrisk" : "border-line text-muted"}`}>
+                    {x.status === "accepted" ? "under review" : x.status}
+                  </span>
+                  <span className="mono text-xs text-muted">opened {fmtDate(x.opened_at, true)}</span>
+                </div>
+                <p className="mt-1 whitespace-pre-wrap">{x.reason}</p>
+                {x.evidence_url ? <a className="link text-xs mono break-all" href={x.evidence_url} target="_blank" rel="noreferrer nofollow">{x.evidence_url}</a> : null}
+                {x.resolution ? <p className="text-xs text-muted mt-1">Decision: {x.resolution}</p> : null}
+                {admin && (x.status === "open" || x.status === "accepted") ? <DisputeDecision id={x.id} status={x.status} /> : null}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted mb-4">No disputes filed.</p>
+        )}
+        <DisputeForm commitmentId={d.commitment.id} />
+      </Section>
 
       <Section title="Source snapshot">
         <div id="snapshot" className="panel p-4 text-sm whitespace-pre-wrap max-h-80 overflow-auto leading-relaxed">

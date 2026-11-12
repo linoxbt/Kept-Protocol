@@ -1,3 +1,4 @@
+import { cacheLife } from "next/cache";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { CASES } from "@/grifter/cases";
@@ -23,9 +24,16 @@ export default function GrifterPage() {
   );
 }
 
+/** The offline suite is deterministic for a build: compute it once and cache it, not on every view. */
+async function buildReport() {
+  "use cache";
+  cacheLife("max");
+  return runGrifter();
+}
+
 async function Report() {
+  const report = await buildReport();
   await connection();
-  const report = await runGrifter();
   const history = await db()<{ id: string; mode: string; summary: { passed: number; total: number; blocking: number }; prompt_versions: Record<string, string>; created_at: Date }[]>`
     select id, mode, summary, prompt_versions, created_at from grifter_runs order by created_at desc limit 10`.catch(() => []);
   const byId = new Map(CASES.map((c) => [c.id, c]));

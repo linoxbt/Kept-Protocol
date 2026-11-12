@@ -1,22 +1,19 @@
-import { seeOther } from "@/lib/http";
-import { checkAdminKey, createSession, sessionCookieHeader } from "@/lib/auth";
-import { clientIp, problem, route } from "@/lib/http";
-import { hit } from "@/services/ratelimit";
+import { createSession, sessionCookieHeader, verifyCredential } from "@/lib/auth";
+import { route, seeOther } from "@/lib/http";
 
+/** Form login. Failed attempts are limited per IP and globally (see verifyCredential). */
 export const POST = route(async (req: Request) => {
-  const limit = await hit(`login:${clientIp(req)}`, 10, 900);
-  if (!limit.allowed) return problem(429, "Too many requests", "too many login attempts; wait 15 minutes");
   const form = await req.formData().catch(() => null);
   const key = String(form?.get("key") ?? "");
   const next = String(form?.get("next") ?? "/admin");
-  const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/admin";
-  if (!(await checkAdminKey(key))) return seeOther(`/admin/login?error=1`);
-  const s = createSession();
-  return new Response(null, {
-    status: 303,
-    headers: {
-      location: safeNext,
-      "set-cookie": sessionCookieHeader(s.value, s.maxAge),
-    },
-  });
+  const safeNext = next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/\\") ? next : "/admin";
+  let ok: boolean;
+  try {
+    ok = await verifyCredential(req, key);
+  } catch {
+    return seeOther(`/admin/login?error=locked`);
+  }
+  if (!ok) return seeOther(`/admin/login?error=1`);
+  const s = await createSession();
+  return new Response(null, { status: 303, headers: { location: safeNext, "set-cookie": sessionCookieHeader(s.value, s.maxAge) } });
 });

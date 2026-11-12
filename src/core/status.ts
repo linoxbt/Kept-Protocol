@@ -108,6 +108,5 @@ export const STATUS_LABEL: Record<Status, string> = {
   at_risk: "At risk",
   breached: "Breached",
   unverifiable: "Unverifiable",
-  expired: "Expired",
   disputed: "Disputed",
 };

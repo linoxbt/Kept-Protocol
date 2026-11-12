@@ -75,8 +75,8 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
               <a className="block text-sm text-muted hover:text-ink" href="/.well-known/agent-card.json">Agent card</a>
             </div>
             <div className="md:col-span-1 space-y-2.5">
-              <p className="label mb-3">Ops</p>
-              <Link className="block text-sm text-muted hover:text-ink" href="/admin">Admin</Link>
+              <p className="label mb-3">System</p>
+              <a className="block text-sm text-muted hover:text-ink" href="/api/v1/health">Status</a>
             </div>
           </div>
           <div className="container-k overflow-hidden">

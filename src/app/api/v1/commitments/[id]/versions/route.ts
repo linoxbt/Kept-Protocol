@@ -1,10 +1,11 @@
+import { after } from "next/server";
 import { z } from "zod";
 import { MethodId } from "@/core/types";
 import { requireAdmin, reviewerName } from "@/lib/auth";
 import { json, parseBody, route } from "@/lib/http";
 import { listVersions } from "@/services/commitments";
 import { confirmVersion } from "@/services/precedent";
-import { runCheck } from "@/services/verify";
+import { startCheckJob } from "@/services/verify";
 
 export const maxDuration = 300;
 
@@ -41,12 +42,7 @@ export const POST = route(async (req: Request, ctx: { params: Promise<{ id: stri
     changeReason: b.change_reason,
     changeKind: b.change_kind,
   });
-  let check = null;
-  try {
-    const c = await runCheck(id, { trigger: "version" });
-    check = { status: c.decision.status, final: c.decision.final, reason: c.decision.reason, receipt_id: c.receipt.id };
-  } catch (e) {
-    check = { error: e instanceof Error ? e.message : String(e) };
-  }
-  return json({ ...r, first_check: check }, { status: 201 });
+  // The first check of the new version runs in the background (it may scan millions of blocks).
+  const job = await startCheckJob(id, "version", (w) => after(w));
+  return json({ ...r, first_check: job ? { job_id: job.id, poll: job.poll, status: "running" } : { status: "queued", detail: "a check is already running; the new version is checked next" } }, { status: 201 });
 });

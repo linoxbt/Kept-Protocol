@@ -5,6 +5,8 @@
  */
 import { db, type Sql } from "@/db/client";
 import type { CommitmentSpec } from "@/core/types";
+import { autoAnchor } from "./anchor";
+import { failStaleJobs } from "./jobs";
 import { recaptureSource, type WatchResult } from "./precedent";
 import { purgeExpiredPreviews } from "./preview";
 import { enqueue, runCheck } from "./verify";
@@ -16,6 +18,7 @@ export interface TickReport {
   deadlines: number;
   outbox: { queued: number; delivered: number; failed: number };
   purged: number;
+  anchor: { anchored: number; skipped?: string; tx?: string };
   ms: number;
 }
 
@@ -36,14 +39,15 @@ export async function claimDue(limit: number, sql: Sql = db()): Promise<string[]
 export async function raiseDeadlineAlerts(sql: Sql = db()): Promise<number> {
   const rows = await sql<{ id: string; spec: CommitmentSpec; status: string }[]>`
     select c.id, v.spec, c.status from commitments c join commitment_versions v on v.id = c.current_version_id
-    where c.final = false and c.status in ('verified', 'at_risk', 'pending')`;
+    where c.final = false and c.status in ('verified', 'at_risk', 'pending', 'awaiting_evidence', 'disputed')
+      and v.spec->>'method_id' = 'burn_v1'
+      and (v.spec->'window'->>'end')::timestamptz between now() and now() + interval '8 days'`;
   let n = 0;
   const now = Date.now();
   for (const r of rows) {
     const end = Date.parse(r.spec.window.end);
     const days = Math.ceil((end - now) / 86_400_000);
-    // Deadlines matter for targets (burns). Locks are "deadlines" only in the sense of release.
-    if (r.spec.method_id !== "burn_v1") continue;
+    // Deadlines matter for targets (burns); the query already selects burns ending within 8 days.
     for (const d of [7, 3, 1]) {
       if (days === d) {
         await enqueue(sql, "commitment.deadline_approaching", r.id, `${r.id}:deadline:${d}`, { commitment_id: r.id, days_left: d, window_end: r.spec.window.end });
@@ -57,7 +61,7 @@ export async function raiseDeadlineAlerts(sql: Sql = db()): Promise<number> {
 export async function tick(opts: { maxChecks?: number; maxSources?: number; deadlineMs?: number } = {}, sql: Sql = db()): Promise<TickReport> {
   const started = Date.now();
   const budget = opts.deadlineMs ?? 50_000;
-  const report: TickReport = { checks: [], sources: [], deadlines: 0, outbox: { queued: 0, delivered: 0, failed: 0 }, purged: 0, ms: 0 };
+  const report: TickReport = { checks: [], sources: [], deadlines: 0, outbox: { queued: 0, delivered: 0, failed: 0 }, purged: 0, anchor: { anchored: 0 }, ms: 0 };
   const ids = await claimDue(opts.maxChecks ?? 10, sql);
   for (const id of ids) {
     if (Date.now() - started > budget) {
@@ -81,6 +85,8 @@ export async function tick(opts: { maxChecks?: number; maxSources?: number; dead
   report.deadlines = await raiseDeadlineAlerts(sql);
   report.outbox = await deliverOutbox(50, sql);
   report.purged = await purgeExpiredPreviews(sql);
+  await failStaleJobs(sql);
+  report.anchor = await autoAnchor(sql);
   report.ms = Date.now() - started;
   return report;
 }

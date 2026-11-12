@@ -66,7 +66,7 @@ export async function pendingRoot(sql: Sql = db(), limit = 10_000): Promise<Pend
   return { root: merkleRoot(leaves), count: rows.length, receiptIds: rows.map((r) => r.id), leaves };
 }
 
-export async function anchorPending(sql: Sql = db(), chainId = Number(process.env.ANCHOR_CHAIN_ID ?? 8453)): Promise<{ anchorId: string; root: string; count: number; tx: Hex; uid: Hex } | null> {
+export async function anchorPending(sql: Sql = db(), chainId = anchorChainId()): Promise<{ anchorId: string; root: string; count: number; tx: Hex; uid: Hex } | null> {
   const key = env().ANCHOR_PRIVATE_KEY;
   if (!key) throw new Error("ANCHOR_PRIVATE_KEY is not set; anchoring is disabled");
   const pending = await pendingRoot(sql);
@@ -101,6 +101,85 @@ export async function anchorPending(sql: Sql = db(), chainId = Number(process.en
     }
   });
   return { anchorId, root: pending.root, count: pending.count, tx, uid };
+}
+
+const MIN_ANCHOR_BALANCE_WEI = 5_000_000_000_000n; // 0.000005 ETH: several Base attestations
+const ANCHOR_LOCK = 7_310_001; // pg advisory lock id: one anchoring run at a time across processes
+
+export function anchorChainId(): number {
+  return Number(process.env.ANCHOR_CHAIN_ID ?? 8453);
+}
+
+export function operatorAddress(): Hex | null {
+  const key = env().ANCHOR_PRIVATE_KEY;
+  return key ? privateKeyToAccount(key as Hex).address : null;
+}
+
+export interface AnchorStatus {
+  chain_id: number;
+  operator: string | null;
+  schema_uid: string;
+  balance_wei: string | null;
+  funded: boolean;
+  pending_receipts: number;
+  last_anchor: { id: string; tx_hash: string; anchored_at: string; receipt_count: number } | null;
+}
+
+let statusCache: { at: number; value: AnchorStatus } | null = null;
+
+/** Operator address, balance and anchoring progress. Balance is cached for a minute. */
+export async function anchorStatus(sql: Sql = db()): Promise<AnchorStatus> {
+  if (statusCache && Date.now() - statusCache.at < 60_000) return statusCache.value;
+  const chainId = anchorChainId();
+  const operator = operatorAddress();
+  let balance: bigint | null = null;
+  if (operator) {
+    const { chain, rpc } = chainFor(chainId);
+    balance = await createPublicClient({ chain, transport: http(rpc) }).getBalance({ address: operator }).catch(() => null);
+  }
+  const [p] = await sql<{ n: number }[]>`select count(*)::int as n from receipts where anchor_id is null`;
+  const [last] = await sql<{ id: string; tx_hash: string; anchored_at: Date; receipt_count: number }[]>`select id, tx_hash, anchored_at, receipt_count from anchors order by anchored_at desc limit 1`;
+  const value: AnchorStatus = {
+    chain_id: chainId,
+    operator,
+    schema_uid: (env().EAS_SCHEMA_UID as string | undefined) ?? schemaUid(),
+    balance_wei: balance === null ? null : balance.toString(),
+    funded: balance !== null && balance >= MIN_ANCHOR_BALANCE_WEI,
+    pending_receipts: p.n,
+    last_anchor: last ? { id: last.id, tx_hash: last.tx_hash, anchored_at: last.anchored_at.toISOString(), receipt_count: last.receipt_count } : null,
+  };
+  statusCache = { at: Date.now(), value };
+  return value;
+}
+
+/**
+ * Called from every monitor tick. Anchors pending receipts when the operator key is funded and
+ * either ANCHOR_INTERVAL_S (default 6 h) has passed since the last anchor or 500 receipts wait.
+ * Registers the EAS schema on first use. Never throws: anchoring must not stop monitoring.
+ */
+export async function autoAnchor(sql: Sql = db()): Promise<{ anchored: number; skipped?: string; tx?: string }> {
+  try {
+    if (!operatorAddress()) return { anchored: 0, skipped: "no operator key" };
+    statusCache = null;
+    const st = await anchorStatus(sql);
+    if (!st.pending_receipts) return { anchored: 0, skipped: "nothing pending" };
+    if (!st.funded) return { anchored: 0, skipped: `operator ${st.operator} is not funded on chain ${st.chain_id}` };
+    const interval = Number(process.env.ANCHOR_INTERVAL_S ?? 6 * 3600) * 1000;
+    const due = !st.last_anchor || Date.now() - Date.parse(st.last_anchor.anchored_at) >= interval || st.pending_receipts >= 500;
+    if (!due) return { anchored: 0, skipped: "not due" };
+    const [lock] = await sql<{ ok: boolean }[]>`select pg_try_advisory_lock(${ANCHOR_LOCK}) as ok`;
+    if (!lock.ok) return { anchored: 0, skipped: "another process is anchoring" };
+    try {
+      if (!env().EAS_SCHEMA_UID) await registerAnchorSchema(st.chain_id);
+      const r = await anchorPending(sql, st.chain_id);
+      statusCache = null;
+      return r ? { anchored: r.count, tx: r.tx } : { anchored: 0, skipped: "nothing pending" };
+    } finally {
+      await sql`select pg_advisory_unlock(${ANCHOR_LOCK})`;
+    }
+  } catch (e) {
+    return { anchored: 0, skipped: `anchoring failed: ${e instanceof Error ? e.message.slice(0, 200) : e}` };
+  }
 }
 
 export async function inclusionProof(receiptId: string, sql: Sql = db()) {

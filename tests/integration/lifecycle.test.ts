@@ -104,7 +104,23 @@ function extractFor(page: string, months: number) {
 
 let sql: postgres.Sql;
 
+/** Skip (do not fail) when no test database is reachable, e.g. on a laptop without Postgres. */
+async function reachable(): Promise<boolean> {
+  const probe = postgres(URL.replace(/\/[^/]+$/, "/postgres"), { max: 1, connect_timeout: 3, onnotice: () => {} });
+  try {
+    await probe`select 1`;
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await probe.end({ timeout: 1 }).catch(() => {});
+  }
+}
+const DB_UP = await reachable();
+if (!DB_UP) console.warn(`[lifecycle] skipped: no Postgres at ${URL.replace(/:[^:@/]*@/, ":***@")}`);
+
 beforeAll(async () => {
+  if (!DB_UP) return;
   const admin = postgres(URL.replace(/\/[^/]+$/, "/postgres"), { max: 1, onnotice: () => {} });
   const dbName = URL.split("/").pop()!;
   await admin.unsafe(`drop database if exists ${dbName} with (force)`);
@@ -120,12 +136,13 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  if (!DB_UP) return;
   setServClient(null);
   setChainProviders(8453, null);
   await closeDb();
 });
 
-describe("Kept lifecycle", () => {
+describe.skipIf(!DB_UP)("Kept lifecycle", () => {
   let projectId = "";
   let sourceId = "";
   let commitmentId = "";

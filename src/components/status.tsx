@@ -9,7 +9,6 @@ const COLOR: Record<Status, string> = {
   disputed: "var(--color-disputed)",
   pending: "var(--color-pending)",
   awaiting_evidence: "var(--color-pending)",
-  expired: "var(--color-unverifiable)",
 };
 
 export function statusColor(s: Status): string {

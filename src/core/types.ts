@@ -104,7 +104,6 @@ export const Status = z.enum([
   "at_risk",
   "breached",
   "unverifiable",
-  "expired",
   "disputed",
 ]);
 export type Status = z.infer<typeof Status>;

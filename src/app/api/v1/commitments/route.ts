@@ -1,9 +1,10 @@
+import { after } from "next/server";
 import { z } from "zod";
 import { MethodId } from "@/core/types";
 import { requireAdmin, reviewerName } from "@/lib/auth";
 import { json, parseBody, route } from "@/lib/http";
 import { confirmDraft } from "@/services/extractions";
-import { runCheck } from "@/services/verify";
+import { startCheckJob } from "@/services/verify";
 
 export const maxDuration = 300;
 
@@ -32,15 +33,8 @@ export const POST = route(async (req: Request) => {
     internalAddresses: b.internal_addresses,
     reviewer: reviewerName(req),
   });
-  let first = null;
-  let first_check_error: string | null = null;
-  if (b.verify_now) {
-    try {
-      const r = await runCheck(commitmentId, { trigger: "confirm" });
-      first = { status: r.decision.status, final: r.decision.final, reason: r.decision.reason, receipt_id: r.receipt.id };
-    } catch (e) {
-      first_check_error = e instanceof Error ? e.message : String(e);
-    }
-  }
-  return json({ commitment_id: commitmentId, first_check: first, first_check_error }, { status: 201 });
+  // The first check can backfill millions of blocks, so it runs in the background (poll the job);
+  // without verify_now the worker picks the commitment up on its next tick.
+  const job = b.verify_now ? await startCheckJob(commitmentId, "confirm", (w) => after(w)) : null;
+  return json({ commitment_id: commitmentId, first_check: job ? { job_id: job.id, poll: job.poll, status: "running" } : null }, { status: 201 });
 });

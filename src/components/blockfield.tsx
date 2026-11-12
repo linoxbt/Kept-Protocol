@@ -55,21 +55,39 @@ export function BlockField() {
         }
       }
     };
+    // ~30 fps, and the loop stops entirely while the canvas is off-screen or the tab is hidden.
+    let last = 0;
     const loop = (t: number) => {
-      if (visible) draw(t);
+      raf = 0;
+      if (!visible || document.hidden) return;
+      if (t - last >= 33) {
+        draw(t);
+        last = t;
+      }
       raf = requestAnimationFrame(loop);
     };
+    const start = () => {
+      if (!reduce && !raf && visible && !document.hidden) raf = requestAnimationFrame(loop);
+    };
     resize();
-    const ro = new ResizeObserver(resize);
+    const ro = new ResizeObserver(() => {
+      resize();
+      if (reduce) draw(0);
+    });
     ro.observe(canvas);
-    const io = new IntersectionObserver(([e]) => (visible = e.isIntersecting));
+    const io = new IntersectionObserver(([e]) => {
+      visible = e.isIntersecting;
+      start();
+    });
     io.observe(canvas);
+    document.addEventListener("visibilitychange", start);
     if (reduce) draw(0);
-    else raf = requestAnimationFrame(loop);
+    else start();
     return () => {
-      cancelAnimationFrame(raf);
+      if (raf) cancelAnimationFrame(raf);
       ro.disconnect();
       io.disconnect();
+      document.removeEventListener("visibilitychange", start);
     };
   }, []);
   return <canvas ref={ref} className="absolute inset-0 w-full h-full" aria-hidden="true" />;

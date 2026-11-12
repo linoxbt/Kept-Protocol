@@ -20,7 +20,7 @@ async function ErrorNote({ searchParams }: { searchParams: Promise<{ error?: str
   return (
     <>
       <input type="hidden" name="next" value={q.next ?? "/admin"} />
-      {q.error ? <p className="text-xs text-breached">That key is not valid.</p> : null}
+      {q.error === "locked" ? <p className="text-xs text-breached">Too many failed attempts. Try again in 15 minutes.</p> : q.error ? <p className="text-xs text-breached">That password is not valid.</p> : null}
     </>
   );
 }

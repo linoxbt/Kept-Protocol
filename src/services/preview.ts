@@ -10,7 +10,12 @@ import { db, type Sql } from "@/db/client";
 import { captureText, fetchSource } from "@/extraction/capture";
 import { env } from "@/lib/env";
 import type { MethodId } from "@/core/types";
-import { getExtraction, prepareSpec, runAndStoreExtraction, type ExtractionRow } from "./extractions";
+import {
+  getExtraction,
+  prepareSpec,
+  runAndStoreExtraction,
+  type ExtractionRow,
+} from "./extractions";
 import { hit } from "./ratelimit";
 import { Invalid } from "./sources";
 import { evaluate } from "./verify";
@@ -23,12 +28,39 @@ export class RateLimited extends Error {
   }
 }
 
-export async function startPreview(input: { url?: string | null; text?: string | null; requester: string }, sql: Sql = db(), defer?: (work: () => Promise<void>) => void): Promise<ExtractionRow> {
-  const limit = await hit(`tryit:${input.requester}`, env().TRYIT_PER_HOUR, 3600, sql);
+export async function startPreview(
+  input: { url?: string | null; text?: string | null; requester: string },
+  sql: Sql = db(),
+  defer?: (work: () => Promise<void>) => void,
+): Promise<ExtractionRow> {
+  const limit = await hit(
+    `tryit:${input.requester}`,
+    env().TRYIT_PER_HOUR,
+    3600,
+    sql,
+  );
   if (!limit.allowed) throw new RateLimited(limit.resetAt);
-  const cap = input.url ? await fetchSource(input.url) : input.text ? captureText(input.text) : null;
+  const cap = input.url
+    ? await fetchSource(input.url)
+    : input.text
+      ? captureText(input.text)
+      : null;
   if (!cap) throw new Invalid("send a url or a text");
-  return runAndStoreExtraction({ project: null, sourceId: null, snapshot: null, preview: { text: cap.text, url: input.url ?? null, sha256: cap.sha256, requesterHash: input.requester } }, sql, { defer });
+  return runAndStoreExtraction(
+    {
+      project: null,
+      sourceId: null,
+      snapshot: null,
+      preview: {
+        text: cap.text,
+        url: input.url ?? null,
+        sha256: cap.sha256,
+        requesterHash: input.requester,
+      },
+    },
+    sql,
+    { defer },
+  );
 }
 
 export interface PreviewCheck {
@@ -46,40 +78,75 @@ export interface PreviewCheck {
   checked_at: string;
 }
 
+type PreviewInput = {
+  extractionId: string;
+  draftIndex: number;
+  tokenAddress?: string | null;
+  methodId?: MethodId;
+  requester: string;
+};
+
 export async function previewCheck(
-  input: { extractionId: string; draftIndex: number; tokenAddress?: string | null; methodId?: MethodId; requester: string },
+  input: PreviewInput,
   sql: Sql = db(),
 ): Promise<PreviewCheck> {
-  const limit = await hit(`tryit-check:${input.requester}`, env().TRYIT_PER_HOUR * 4, 3600, sql);
+  return (await preparePreviewCheck(input, sql))();
+}
+
+/** Validates and rate-limits a preview check now; the returned function does the chain scan. */
+export async function preparePreviewCheck(
+  input: PreviewInput,
+  sql: Sql = db(),
+): Promise<() => Promise<PreviewCheck>> {
+  const limit = await hit(
+    `tryit-check:${input.requester}`,
+    env().TRYIT_PER_HOUR * 4,
+    3600,
+    sql,
+  );
   if (!limit.allowed) throw new RateLimited(limit.resetAt);
   const ex = await getExtraction(input.extractionId, sql);
   if (!ex?.preview) throw new Invalid("not a preview");
   const { spec } = await prepareSpec(
-    { extractionId: input.extractionId, draftIndex: input.draftIndex, tokenAddress: input.tokenAddress, methodId: input.methodId, reviewer: "preview" },
+    {
+      extractionId: input.extractionId,
+      draftIndex: input.draftIndex,
+      tokenAddress: input.tokenAddress,
+      methodId: input.methodId,
+      reviewer: "preview",
+    },
     sql,
     { previewAttribution: true },
   );
-  const { decision, result, collected } = await evaluate(spec, sql, { budgetBlocks: PREVIEW_SCAN_BLOCKS });
-  const out: PreviewCheck = {
-    label: "Unconfirmed preview",
-    status: decision.status,
-    final: decision.final,
-    reason: collected.complete ? decision.reason : `${decision.reason} Previews scan at most ${PREVIEW_SCAN_BLOCKS.toLocaleString("en-US")} blocks.`,
-    computed_value: result.computed_value,
-    threshold_base_units: result.threshold_base_units,
-    decimals: spec.token.decimals,
-    symbol: spec.token.symbol,
-    evidence_count: result.counted.length,
-    as_of_block: collected.evidence.finalizedBlock.toString(),
-    complete: collected.complete,
-    checked_at: new Date().toISOString(),
-  };
-  await sql`update extractions set result = jsonb_set(coalesce(result, '{}'::jsonb), ${sql.array(["previews", String(input.draftIndex)])}::text[], ${sql.json(out as never)}, true)
+  return async () => {
+    const { decision, result, collected } = await evaluate(spec, sql, {
+      budgetBlocks: PREVIEW_SCAN_BLOCKS,
+      confirm: false,
+    });
+    const out: PreviewCheck = {
+      label: "Unconfirmed preview",
+      status: decision.status,
+      final: decision.final,
+      reason: collected.complete
+        ? decision.reason
+        : `${decision.reason} Previews scan at most ${PREVIEW_SCAN_BLOCKS.toLocaleString("en-US")} blocks.`,
+      computed_value: result.computed_value,
+      threshold_base_units: result.threshold_base_units,
+      decimals: spec.token.decimals,
+      symbol: spec.token.symbol,
+      evidence_count: result.counted.length,
+      as_of_block: collected.evidence.finalizedBlock.toString(),
+      complete: collected.complete,
+      checked_at: new Date().toISOString(),
+    };
+    await sql`update extractions set result = jsonb_set(coalesce(result, '{}'::jsonb), ${sql.array(["previews", String(input.draftIndex)])}::text[], ${sql.json(out as never)}, true)
             where id = ${input.extractionId}`;
-  return out;
+    return out;
+  };
 }
 
 export async function purgeExpiredPreviews(sql: Sql = db()): Promise<number> {
-  const r = await sql`delete from extractions where preview and expires_at < now()`;
+  const r =
+    await sql`delete from extractions where preview and expires_at < now()`;
   return r.count;
 }

@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { connection } from "next/server";
+import { Suspense } from "react";
 import { env } from "@/lib/env";
 import { Section } from "@/components/ui";
 
@@ -13,13 +15,33 @@ const ENDPOINTS: [string, string, string][] = [
   ["GET", "/api/v1/projects", "Projects with status counts"],
   ["GET", "/api/v1/feed", "Recent status changes"],
   ["POST", "/api/v1/tryit", "Preview extraction for a URL or text (public, rate-limited)"],
+  ["GET", "/api/v1/jobs/{id}", "Poll a background job (long actions answer 202 with a job)"],
+  ["POST", "/api/v1/commitments/{id}/disputes", "Dispute a record (public, rate-limited); GET lists disputes"],
+  ["POST", "/api/v1/disputes/{id}", "Accept, reject or resolve a dispute (admin)"],
   ["POST", "/api/v1/commitments", "Confirm a draft (admin)"],
   ["POST", "/api/v1/hindcast", "Replay versions over history (admin)"],
   ["POST", "/api/v1/webhooks", "Register a signed webhook (admin)"],
 ];
 
-export default function Docs() {
+/** Reads the live payment settings at request time, never at build time. */
+async function PaymentExample() {
+  await connection();
   const e = env();
+  return (
+    <pre className="panel p-4 text-xs mono overflow-auto">{`# 1. Ask. Without payment the API answers 402 with payment requirements.
+curl -i "$KEPT/api/v1/agent/commitments?chain_id=8453&token=0x…"
+#    → ${e.X402_PAY_TO ? `402 Payment Required  (scheme "exact", ${e.X402_PRICE} USDC on ${e.X402_NETWORK})` : "503 until this deployment sets a pay-to address"}
+
+# 2. Pay and retry with any x402 client, e.g. @x402/fetch:
+import { wrapFetchWithPayment } from "@x402/fetch";
+const res = await wrapFetchWithPayment(fetch, client)(url);
+#    → 200, signed JSON: { coverage, commitments: [{ status, final, attribution, receipt, receipt_sha256 }] }
+
+# coverage "none" means Kept has no record. It is never evidence that a token is clean.`}</pre>
+  );
+}
+
+export default function Docs() {
   return (
     <div className="max-w-4xl">
       <h1 className="title mb-4">API</h1>
@@ -31,9 +53,17 @@ export default function Docs() {
         <ul className="text-sm space-y-2 list-disc pl-5">
           <li>Public reads are signed: <span className="mono">Kept-Signature</span> is an EIP-191 signature over the SHA-256 of the exact response body, by <span className="mono">Kept-Signer</span>.</li>
           <li>Errors are RFC 9457 problem details (<span className="mono">application/problem+json</span>).</li>
-          <li>Every POST accepts <span className="mono">Idempotency-Key</span>; the first response for a key is replayed.</li>
+          <li>Every POST accepts <span className="mono">Idempotency-Key</span>; the first response for a key is replayed to the same caller (keys are scoped to the credential that sent them).</li>
+          <li>Long actions (checks, Hindcast, preview checks, Grifter runs) answer <span className="mono">202</span> with a <span className="mono">poll</span> URL.</li>
           <li>Admin writes take <span className="mono">Authorization: Bearer &lt;admin key&gt;</span>.</li>
           <li>Webhooks carry <span className="mono">Kept-Webhook-Signature: t=&lt;unix&gt;,v1=&lt;hmac_sha256(secret, t + &quot;.&quot; + body)&gt;</span>; reject timestamps older than 5 minutes.</li>
+        </ul>
+      </Section>
+      <Section title="Coverage">
+        <ul className="text-sm space-y-2 list-disc pl-5">
+          <li>Monitored: token locks and transfer restrictions (<span className="mono">erc20_outflow_v1</span>), vesting schedules (<span className="mono">vesting_schedule_v1</span>) and burn targets (<span className="mono">burn_v1</span>) for ERC-20 tokens on Base.</li>
+          <li>Recorded, not monitored: treasury reserves, governance execution deadlines and fee distributions. Extraction finds and classifies them, but no verification method exists for them in this release, so they never get a status.</li>
+          <li>Statuses: Pending, Awaiting evidence (history still being scanned or recounted), Verified, At risk, Breached, Unverifiable, Disputed (a reviewer accepted a dispute; the mechanical result stays in the reason).</li>
         </ul>
       </Section>
       <Section title="Endpoints">
@@ -42,16 +72,9 @@ export default function Docs() {
         </table>
       </Section>
       <Section title="Agents: pay per query with x402">
-        <pre className="panel p-4 text-xs mono overflow-auto">{`# 1. Ask. Without payment the API answers 402 with payment requirements.
-curl -i "$KEPT/api/v1/agent/commitments?chain_id=8453&token=0x…"
-#    → 402 Payment Required  (scheme "exact", ${e.X402_PRICE} USDC on ${e.X402_NETWORK})
-
-# 2. Pay and retry with any x402 client, e.g. @x402/fetch:
-import { wrapFetchWithPayment } from "@x402/fetch";
-const res = await wrapFetchWithPayment(fetch, client)(url);
-#    → 200, signed JSON: { coverage, commitments: [{ status, final, attribution, receipt, receipt_sha256 }] }
-
-# coverage "none" means Kept has no record. It is never evidence that a token is clean.`}</pre>
+        <Suspense fallback={<div className="panel p-4 h-40" />}>
+          <PaymentExample />
+        </Suspense>
       </Section>
       <Section title="Verify a receipt yourself" aside={<span id="verify" />}>
         <ol className="text-sm space-y-2 list-decimal pl-5 mb-4">

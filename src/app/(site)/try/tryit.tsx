@@ -2,6 +2,7 @@
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import type { Draft, ExtractionResult } from "@/extraction/pipeline";
+import { resolveJob } from "@/components/poll-job";
 
 interface PreviewCheck {
   status: string;
@@ -157,7 +158,9 @@ function DraftCard({ id, d }: { id: string; d: Draft }) {
               const r = await fetch(`/api/v1/tryit/${id}/check`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ draft_index: d.index, token_address: token || null }) });
               const j = await r.json();
               if (!r.ok) setErr(j.detail ?? j.title);
-              else setCheck(j);
+              else setCheck(await resolveJob(j));
+            } catch (e) {
+              setErr(e instanceof Error ? e.message : String(e));
             } finally {
               setBusy(false);
             }

@@ -79,7 +79,8 @@ function safeLookup(hostname: string, options: { all?: boolean } & object, cb: L
   });
 }
 
-const agent = new Agent({ connect: { lookup: safeLookup as never, timeout: TIMEOUT_MS }, bodyTimeout: TIMEOUT_MS, headersTimeout: TIMEOUT_MS });
+/** Undici dispatcher whose DNS lookup refuses private, loopback and reserved addresses (rebinding-safe). */
+export const safeDispatcher = new Agent({ connect: { lookup: safeLookup as never, timeout: TIMEOUT_MS }, bodyTimeout: TIMEOUT_MS, headersTimeout: TIMEOUT_MS });
 
 export function checkUrl(raw: string): URL {
   let url: URL;
@@ -112,7 +113,7 @@ export async function fetchSource(rawUrl: string): Promise<Captured> {
     let res;
     try {
       res = await undiciFetch(url, {
-        dispatcher: agent,
+        dispatcher: safeDispatcher,
         redirect: "manual",
         headers: { "user-agent": "KeptBot/1.0 (+commitment verification)", accept: "text/html,text/plain,text/markdown;q=0.9,*/*;q=0.1" },
         signal: AbortSignal.timeout(TIMEOUT_MS),

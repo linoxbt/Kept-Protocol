@@ -21,6 +21,6 @@ export function ulid(now = Date.now()): string {
   return time + rand;
 }
 
-export type IdPrefix = "kp" | "ks" | "kn" | "kx" | "kc" | "kv" | "kk" | "ke" | "kr" | "ka" | "ksc" | "kh" | "kg" | "kw" | "kpay" | "ksv";
+export type IdPrefix = "kp" | "ks" | "kn" | "kx" | "kc" | "kv" | "kk" | "ke" | "kr" | "ka" | "ksc" | "kh" | "kg" | "kw" | "kpay" | "ksv" | "kd" | "kj";
 
 export const newId = (prefix: IdPrefix) => `${prefix}_${ulid()}`;

@@ -17,7 +17,7 @@ export function openapi(base: string) {
       securitySchemes: { bearer: { type: "http", scheme: "bearer", description: "Admin key" } },
       schemas: {
         Problem: { type: "object", properties: { type: { type: "string" }, title: { type: "string" }, status: { type: "integer" }, detail: { type: "string" }, instance: { type: "string" } } },
-        Status: { type: "string", enum: ["pending", "awaiting_evidence", "verified", "at_risk", "breached", "unverifiable", "expired", "disputed"] },
+        Status: { type: "string", enum: ["pending", "awaiting_evidence", "verified", "at_risk", "breached", "unverifiable", "disputed"] },
       },
     },
     paths: {

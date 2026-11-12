@@ -6,8 +6,10 @@
  */
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { db, type Sql } from "@/db/client";
-import { checkUrl } from "@/extraction/capture";
+import { fetch as undiciFetch } from "undici";
+import { checkUrl, safeDispatcher } from "@/extraction/capture";
 import { newId } from "@/lib/ids";
+import { openValue, sealValue } from "@/lib/secrets";
 
 export const EVENT_TYPES = [
   "commitment.status_changed",
@@ -15,6 +17,7 @@ export const EVENT_TYPES = [
   "commitment.satisfied",
   "commitment.deadline_approaching",
   "commitment.version_created",
+  "commitment.disputed",
   "source.changed",
   "transfer.detected",
 ] as const;
@@ -39,7 +42,7 @@ export async function registerWebhook(input: { url: string; events: string[]; pr
   if (!events.length) throw new Error("no valid event types");
   const secret = `whsec_${randomBytes(24).toString("hex")}`;
   const id = newId("kw");
-  await sql`insert into webhooks (id, url, secret, events, project_id) values (${id}, ${input.url}, ${secret}, ${events}, ${input.projectId ?? null})`;
+  await sql`insert into webhooks (id, url, secret, events, project_id) values (${id}, ${input.url}, ${sealValue(secret)}, ${events}, ${input.projectId ?? null})`;
   return { id, url: input.url, events, secret };
 }
 
@@ -67,11 +70,19 @@ export async function deliverOutbox(limit = 50, sql: Sql = db()): Promise<{ queu
     await sql`update outbox set delivered_at = now() where id = ${e.id}`;
   }
 
+  // Claim due deliveries atomically (SKIP LOCKED + a 2-minute lease), so two schedulers running
+  // at once (worker and HTTP cron) never send the same event twice.
   const due = await sql<{ webhook_id: string; outbox_id: string; attempts: number; url: string; secret: string; event_type: string; payload: object; created_at: Date }[]>`
-    select d.webhook_id, d.outbox_id::text, d.attempts, w.url, w.secret, o.event_type, o.payload, o.created_at
-    from webhook_deliveries d join webhooks w on w.id = d.webhook_id join outbox o on o.id = d.outbox_id
-    where d.status = 'pending' and d.next_attempt_at <= now()
-    order by d.next_attempt_at limit ${limit}`;
+    with claimed as (
+      update webhook_deliveries d set next_attempt_at = now() + interval '2 minutes'
+      where (d.webhook_id, d.outbox_id) in (
+        select webhook_id, outbox_id from webhook_deliveries
+        where status = 'pending' and next_attempt_at <= now()
+        order by next_attempt_at limit ${limit}
+        for update skip locked)
+      returning d.webhook_id, d.outbox_id, d.attempts)
+    select c.webhook_id, c.outbox_id::text, c.attempts, w.url, w.secret, o.event_type, o.payload, o.created_at
+    from claimed c join webhooks w on w.id = c.webhook_id join outbox o on o.id = c.outbox_id`;
   let delivered = 0;
   let failed = 0;
   for (const d of due) {
@@ -80,11 +91,13 @@ export async function deliverOutbox(limit = 50, sql: Sql = db()): Promise<{ queu
     let err: string | null = null;
     try {
       checkUrl(d.url);
-      const res = await fetch(d.url, {
+      // The safe dispatcher re-checks every resolved address, so DNS rebinding cannot reach internal hosts.
+      const res = await undiciFetch(d.url, {
         method: "POST",
-        headers: { "content-type": "application/json", "kept-webhook-signature": signWebhook(d.secret, body), "user-agent": "Kept-Webhooks/1.0" },
+        headers: { "content-type": "application/json", "kept-webhook-signature": signWebhook(openValue(d.secret), body), "user-agent": "Kept-Webhooks/1.0" },
         body,
         redirect: "manual",
+        dispatcher: safeDispatcher,
         signal: AbortSignal.timeout(10_000),
       });
       code = res.status;
