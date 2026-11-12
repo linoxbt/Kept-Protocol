@@ -58,7 +58,7 @@ export function assertProductionEnv(): void {
 
 export function codeCommit(): string {
   const e = env();
-  return e.KEPT_CODE_COMMIT ?? e.VERCEL_GIT_COMMIT_SHA ?? "dev";
+  return e.KEPT_CODE_COMMIT ?? e.VERCEL_GIT_COMMIT_SHA ?? process.env.RAILWAY_GIT_COMMIT_SHA ?? process.env.COMMIT_REF ?? "dev";
 }
 
 export function resetEnvCache(): void {
