@@ -82,7 +82,9 @@ export class EvmAdapter implements ChainAdapter {
   async blockTime(n: bigint): Promise<number> {
     const hit = this.blockTimes.get(n);
     if (hit !== undefined) return hit;
-    const b = await this.client.getBlock({ blockNumber: n });
+    const b = await this.client.getBlock({ blockNumber: n }).catch((e: unknown) => {
+      throw archiveHint(e, this.name, n);
+    });
     const t = Number(b.timestamp);
     if (this.blockTimes.size > 5000) this.blockTimes.clear();
     this.blockTimes.set(n, t);
@@ -142,7 +144,10 @@ export class EvmAdapter implements ChainAdapter {
     });
     if (!res.ok) throw new RpcError(`HTTP ${res.status}`, res.status === 429);
     const json = (await res.json()) as { result?: RawLog[]; error?: { message: string; code: number } };
-    if (json.error) throw new RpcError(json.error.message, /limit|rate|too many/i.test(json.error.message));
+    if (json.error) {
+      if (/archive/i.test(json.error.message)) throw archiveHint(new Error(json.error.message), this.name, null);
+      throw new RpcError(json.error.message, /limit|rate|too many/i.test(json.error.message));
+    }
     return json.result ?? [];
   }
 
@@ -171,6 +176,7 @@ export class EvmAdapter implements ChainAdapter {
         failures = 0;
         if (this.chunkDelayMs) await sleep(this.chunkDelayMs);
       } catch (e) {
+        if (e instanceof ArchiveRequired) throw e;
         const msg = e instanceof Error ? e.message : String(e);
         const cap = /maximum block range:?\s*(\d+)|over\s+(\d+)\s+blocks|range.*?(\d{4,})/i.exec(msg);
         if (cap) {
@@ -272,6 +278,17 @@ export class EvmAdapter implements ChainAdapter {
   getCode(address: `0x${string}`) {
     return this.client.getCode({ address });
   }
+}
+
+export class ArchiveRequired extends Error {}
+
+/** Turns a provider's "archive requests need a token" refusal into an actionable message. */
+function archiveHint(e: unknown, name: string, block: bigint | null): Error {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (!/archive/i.test(msg)) return e instanceof Error ? e : new Error(msg);
+  return new ArchiveRequired(
+    `${name} has no archive access${block !== null ? ` (block ${block})` : ""}. This commitment's window starts further back than the provider serves; set BASE_RPC_URL to an archive-capable Base RPC (for example Alchemy or QuickNode) to check it.`,
+  );
 }
 
 export class RpcError extends Error {

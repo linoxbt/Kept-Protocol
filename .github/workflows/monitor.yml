@@ -1,0 +1,17 @@
+# Drives Kept's scheduler on hosts without a long-running worker (e.g. Vercel Hobby, whose cron
+# runs at most daily). Set repository secrets KEPT_URL and CRON_SECRET.
+name: monitor
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    if: ${{ vars.KEPT_MONITOR_ENABLED == 'true' }}
+    steps:
+      - name: Run one monitor tick
+        run: |
+          curl -fsS --max-time 290 "${{ secrets.KEPT_URL }}/api/cron/tick" -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
