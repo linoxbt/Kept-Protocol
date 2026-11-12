@@ -1,0 +1,10 @@
+# Netlify hosts the public site and API (Next.js via Netlify's OpenNext runtime, detected
+# automatically). Long-running work — SERV extractions, Hindcast replays, monitoring — also runs
+# on the Railway web service and worker, which have no function time limit.
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "22"
+  NEXT_TELEMETRY_DISABLED = "1"

@@ -38,7 +38,9 @@ let cached: EnvT | null = null;
 
 export function env(): EnvT {
   if (cached) return cached;
-  const parsed = Env.safeParse(process.env);
+  // Empty strings (e.g. an unresolved platform variable reference) count as unset.
+  const raw = Object.fromEntries(Object.entries(process.env).filter(([, v]) => v !== undefined && v !== ""));
+  const parsed = Env.safeParse(raw);
   if (!parsed.success) {
     throw new Error(`Invalid environment: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
   }
