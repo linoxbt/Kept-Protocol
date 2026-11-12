@@ -13,7 +13,7 @@ const Body = z.object({
 });
 
 export const POST = route(async (req: Request) => {
-  requireAdmin(req);
+  await requireAdmin(req);
   const b = await parseBody(req, Body);
   const run = await runHindcastFor(b.commitment_id, { versions: b.versions, from: b.from, to: b.to });
   return json({ id: run.id, receipt_id: run.receiptId, versions: run.versions, lanes: run.result.lanes.map((l) => ({ version: l.version, changes: l.changes, first_breached_at: l.firstBreachedAt, first_verified_final_at: l.firstVerifiedFinalAt })), divergences: run.result.divergences.length }, { status: 201 });

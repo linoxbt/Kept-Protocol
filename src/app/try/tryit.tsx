@@ -40,8 +40,19 @@ export function TryIt() {
     setRes(null);
     try {
       const r = await fetch("/api/v1/tryit", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(m === "url" ? { url: u } : { text: t }) });
-      const j = await r.json();
-      if (!r.ok) setError(j.detail ?? j.title ?? "failed");
+      let j = await r.json();
+      if (!r.ok) {
+        setError(j.detail ?? j.title ?? "failed");
+        return;
+      }
+      // Extraction runs in the background; poll until it finishes (up to ~4 minutes).
+      for (let i = 0; j.status === "running" && i < 120; i++) {
+        await new Promise((ok) => setTimeout(ok, 2000));
+        const p = await fetch(`/api/v1/extractions/${j.id}`);
+        if (p.ok) j = await p.json();
+      }
+      if (j.status === "failed") setError(j.error ?? "extraction failed");
+      else if (j.status === "running") setError("SERV is taking longer than usual; try again in a minute.");
       else setRes({ id: j.id, result: j.result });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

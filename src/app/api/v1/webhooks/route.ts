@@ -7,7 +7,7 @@ const Body = z.object({ url: z.string().url(), events: z.array(z.enum(EVENT_TYPE
 
 /** Registers an endpoint. The signing secret is returned once, here, and never again. */
 export const POST = route(async (req: Request) => {
-  requireAdmin(req);
+  await requireAdmin(req);
   const b = await parseBody(req, Body);
   try {
     return json(await registerWebhook({ url: b.url, events: b.events, projectId: b.project_id }), { status: 201 });

@@ -17,7 +17,7 @@ const Body = z.object({
 });
 
 export const POST = route(async (req: Request) => {
-  requireAdmin(req);
+  await requireAdmin(req);
   const b = await parseBody(req, Body);
   const p = await createProject({ name: b.name, slug: b.slug, chainId: b.chain_id, tokenAddress: b.token_address, description: b.description, registrationLevel: b.registration_level, isDemo: b.is_demo });
   return json(p, { status: 201 });

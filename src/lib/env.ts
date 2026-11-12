@@ -52,7 +52,7 @@ export function env(): EnvT {
 export function assertProductionEnv(): void {
   const e = env();
   if (e.NODE_ENV !== "production" || process.env.KEPT_ALLOW_DEV_KEYS === "1") return;
-  const missing = (["DATABASE_URL", "KEPT_SIGNER_PRIVATE_KEY", "KEPT_ADMIN_KEY"] as const).filter((k) => !e[k]);
+  const missing = (["DATABASE_URL", "KEPT_SIGNER_PRIVATE_KEY"] as const).filter((k) => !e[k]);
   if (missing.length) throw new Error(`Missing required production environment variables: ${missing.join(", ")}`);
 }
 

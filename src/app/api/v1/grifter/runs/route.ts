@@ -9,7 +9,7 @@ export const maxDuration = 300;
 
 /** Runs the suite (offline by default; ?live=1 sends every source to SERV) and stores the report. */
 export const POST = route(async (req: Request) => {
-  requireAdmin(req);
+  await requireAdmin(req);
   const live = new URL(req.url).searchParams.get("live") === "1" ? (servClient() ?? undefined) : undefined;
   const report = await runGrifter({ live });
   const id = newId("kg");

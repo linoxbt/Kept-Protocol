@@ -53,6 +53,7 @@ export async function runAndStoreExtraction(
     targetCommitmentId?: string | null;
   },
   sql: Sql = db(),
+  opts: { defer?: (work: () => Promise<void>) => void } = {},
 ): Promise<ExtractionRow> {
   const client = servClient();
   if (!client) throw new ServError("SERV is not configured (SERV_API_KEY); new extractions are paused, monitoring is unaffected", "not_configured");
@@ -63,15 +64,26 @@ export async function runAndStoreExtraction(
             values (${id}, ${input.project?.id ?? null}, ${input.sourceId}, ${input.snapshot?.id ?? null}, ${input.preview?.text ?? null}, ${input.preview?.url ?? null},
                     ${input.preview?.sha256 ?? input.snapshot!.content_sha256}, ${!!input.preview}, 'running', ${input.preview?.requesterHash ?? null},
                     ${input.targetCommitmentId ?? null}, ${input.preview ? new Date(Date.now() + 24 * 3600_000) : null})`;
-  try {
-    const result = await runExtraction(text, projectContext(input.project), { serv: client, meter: meterFor(id, sql) });
-    const [row] = await sql<ExtractionRow[]>`update extractions set status = 'done', result = ${sql.json(result as never)} where id = ${id} returning *`;
+  const work = async (): Promise<ExtractionRow> => {
+    try {
+      const result = await runExtraction(text, projectContext(input.project), { serv: client, meter: meterFor(id, sql) });
+      const [row] = await sql<ExtractionRow[]>`update extractions set status = 'done', result = ${sql.json(result as never)} where id = ${id} returning *`;
+      return row;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      await sql`update extractions set status = 'failed', error = ${msg.slice(0, 1000)} where id = ${id}`;
+      throw e;
+    }
+  };
+  if (opts.defer) {
+    // Respond now; the extraction finishes in the background and the client polls the row.
+    opts.defer(async () => {
+      await work().catch(() => {});
+    });
+    const [row] = await sql<ExtractionRow[]>`select * from extractions where id = ${id}`;
     return row;
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    await sql`update extractions set status = 'failed', error = ${msg.slice(0, 1000)} where id = ${id}`;
-    throw e;
   }
+  return work();
 }
 
 /**

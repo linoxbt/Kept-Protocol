@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth";
 import { json, parseBody, Problem, route } from "@/lib/http";
@@ -19,7 +20,7 @@ const Body = z
   .refine((b) => b.url || b.text, "send a url or a text");
 
 export const POST = route(async (req: Request) => {
-  requireAdmin(req);
+  await requireAdmin(req);
   const b = await parseBody(req, Body);
   const project = await getProjectBySlugOrId(b.project_id);
   if (!project) throw new Problem(404, "Not found", "no such project");
@@ -32,7 +33,7 @@ export const POST = route(async (req: Request) => {
     if (!servAvailable()) extraction_error = "SERV is not configured; write a manual draft for this snapshot instead";
     else {
       try {
-        extraction = await runAndStoreExtraction({ project, sourceId: source.id, snapshot });
+        extraction = await runAndStoreExtraction({ project, sourceId: source.id, snapshot }, undefined, { defer: (work) => after(work) });
       } catch (e) {
         extraction_error = e instanceof Error ? e.message : String(e);
       }

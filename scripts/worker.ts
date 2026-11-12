@@ -5,10 +5,9 @@
  */
 import { closeDb } from "../src/db/client";
 import { assertProductionEnv } from "../src/lib/env";
+import { bootstrapSecrets } from "../src/lib/secrets";
 import { tick } from "../src/services/monitor";
 
-// Refuse to sign receipts with the public development key in production.
-assertProductionEnv();
 
 const every = Number(process.env.KEPT_TICK_SECONDS ?? 60) * 1000;
 let stopping = false;
@@ -33,4 +32,14 @@ async function loop() {
 }
 
 for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => (stopping = true));
-void loop();
+
+// Load the deployment's own secrets, then refuse to sign with the public development key.
+bootstrapSecrets()
+  .then(() => {
+    assertProductionEnv();
+    return loop();
+  })
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });

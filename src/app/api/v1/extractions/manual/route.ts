@@ -12,7 +12,7 @@ const Body = z.object({
 });
 
 export const POST = route(async (req: Request) => {
-  requireAdmin(req);
+  await requireAdmin(req);
   const b = await parseBody(req, Body);
   return json(await createManualDraft({ snapshotId: b.snapshot_id, projectId: b.project_id, quote: b.quote, fields: b.fields, targetCommitmentId: b.target_commitment_id }), { status: 201 });
 });

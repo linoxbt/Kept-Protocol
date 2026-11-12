@@ -27,7 +27,7 @@ const Body = z.object({
 
 /** Confirm a policy change as the next version. The old version is frozen, never edited. */
 export const POST = route(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
-  requireAdmin(req);
+  await requireAdmin(req);
   const { id } = await ctx.params;
   const b = await parseBody(req, Body);
   const r = await confirmVersion(id, {

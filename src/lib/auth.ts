@@ -1,25 +1,25 @@
 /**
  * Admin authentication. Writes (confirming drafts, running checks, versions, Hindcast jobs,
- * webhooks) need the admin key, sent as `Authorization: Bearer <key>` or held in an HMAC-signed,
- * HttpOnly session cookie set by /api/admin/login. Everything evidential is public to read.
+ * webhooks) need the admin: a Bearer key (KEPT_ADMIN_KEY, if set) or the admin password, or the
+ * HMAC-signed, HttpOnly session cookie set at login. Everything evidential is public to read.
  */
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { db } from "@/db/client";
 import { env } from "./env";
 import { Problem } from "./http";
+import { verifyPassword } from "./secrets";
 
 export const SESSION_COOKIE = "kept_session";
 const SESSION_TTL_S = 12 * 3600;
 const DEV_ADMIN_KEY = "dev-admin-key-change-me-0000000000";
 
-export function adminKey(): string | null {
-  const e = env();
-  if (e.KEPT_ADMIN_KEY) return e.KEPT_ADMIN_KEY;
-  return e.NODE_ENV === "production" && process.env.KEPT_ALLOW_DEV_KEYS !== "1" ? null : DEV_ADMIN_KEY;
+function devMode(): boolean {
+  return env().NODE_ENV !== "production" || process.env.KEPT_ALLOW_DEV_KEYS === "1";
 }
 
 function secret(): string {
   const e = env();
-  return e.KEPT_SESSION_SECRET ?? createHash("sha256").update(`session:${adminKey() ?? "none"}`).digest("hex");
+  return e.KEPT_SESSION_SECRET ?? createHash("sha256").update(`session:${e.KEPT_ADMIN_KEY ?? DEV_ADMIN_KEY}`).digest("hex");
 }
 
 function safeEqual(a: string, b: string): boolean {
@@ -28,9 +28,28 @@ function safeEqual(a: string, b: string): boolean {
   return x.length === y.length && timingSafeEqual(x, y);
 }
 
-export function checkAdminKey(candidate: string): boolean {
-  const key = adminKey();
-  return !!key && safeEqual(candidate, key);
+export async function adminPasswordHash(): Promise<string | null> {
+  try {
+    const [r] = await db()<{ value: string }[]>`select value from kept_secrets where name = 'ADMIN_PASSWORD_HASH'`;
+    return r?.value ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** True when no admin credential exists yet, so /admin/setup may create one. */
+export async function adminSetupOpen(): Promise<boolean> {
+  if (env().KEPT_ADMIN_KEY) return false;
+  return (await adminPasswordHash()) === null;
+}
+
+export async function checkAdminKey(candidate: string): Promise<boolean> {
+  if (!candidate) return false;
+  const key = env().KEPT_ADMIN_KEY;
+  if (key && safeEqual(candidate, key)) return true;
+  const hash = await adminPasswordHash();
+  if (hash && verifyPassword(candidate, hash)) return true;
+  return devMode() && !key && !hash && safeEqual(candidate, DEV_ADMIN_KEY);
 }
 
 export function createSession(now = Math.floor(Date.now() / 1000)): { value: string; maxAge: number } {
@@ -48,6 +67,10 @@ export function validSession(value: string | undefined | null, now = Math.floor(
   return safeEqual(mac, expected);
 }
 
+export function sessionCookieHeader(value: string, maxAge: number): string {
+  return `${SESSION_COOKIE}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${process.env.NODE_ENV === "production" ? "; Secure" : ""}`;
+}
+
 function cookieValue(req: Request, name: string): string | null {
   const header = req.headers.get("cookie");
   if (!header) return null;
@@ -58,14 +81,18 @@ function cookieValue(req: Request, name: string): string | null {
   return null;
 }
 
-export function isAdminRequest(req: Request): boolean {
+export async function isAdminRequest(req: Request): Promise<boolean> {
+  if (validSession(cookieValue(req, SESSION_COOKIE))) return true;
   const auth = req.headers.get("authorization");
-  if (auth?.startsWith("Bearer ") && checkAdminKey(auth.slice(7).trim())) return true;
-  return validSession(cookieValue(req, SESSION_COOKIE));
+  return !!auth?.startsWith("Bearer ") && (await checkAdminKey(auth.slice(7).trim()));
 }
 
-export function requireAdmin(req: Request): void {
-  if (!isAdminRequest(req)) throw new Problem(401, "Unauthorized", "this action needs the admin key (Authorization: Bearer …) or an admin session", { "www-authenticate": 'Bearer realm="kept"' });
+export async function requireAdmin(req: Request): Promise<void> {
+  if (!(await isAdminRequest(req))) {
+    throw new Problem(401, "Unauthorized", "this action needs the admin (Authorization: Bearer <admin password or key>) or an admin session", {
+      "www-authenticate": 'Bearer realm="kept"',
+    });
+  }
 }
 
 export function reviewerName(req: Request): string {

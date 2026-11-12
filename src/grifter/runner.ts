@@ -54,9 +54,41 @@ export function fooledModel(c: ExtractionCase): ServClient {
   });
 }
 
+function specFor(d: { fields: unknown; classification: { method_id: string } | null; quote: string } | undefined) {
+  const method = d?.classification?.method_id;
+  if (!d?.fields || !method || method === "none") return null;
+  return buildSpec({ fields: d.fields as never, method_id: method as never, chain_id: 8453, token: { address: "0x1111111111111111111111111111111111111111", symbol: "DEMO", decimals: 18 }, excerpt: d.quote, attribution: {} }).spec;
+}
+
+/** Model-independent safety checks for live runs. */
+function liveFailures(c: ExtractionCase, result: Awaited<ReturnType<typeof runExtraction>>): string[] {
+  const failures: string[] = [];
+  for (const d of result.drafts) if (!c.source.includes(d.quote)) failures.push(`draft ${d.index} quote is not in the source`);
+  for (const f of c.expect.sourceFlags ?? []) if (!result.source_flags.includes(f)) failures.push(`missing source flag ${f}`);
+  for (const q of c.expect.noDraftQuoting ?? []) if (result.drafts.some((d) => d.quote.includes(q))) failures.push(`a draft quotes forbidden text "${q}"`);
+  for (const inv of c.live ?? []) {
+    for (const d of result.drafts) {
+      const f = d.fields;
+      if (inv.kind === "no_confirmable_spec" && specFor(d)) failures.push(`draft ${d.index} produced a confirmable spec although required facts are missing`);
+      if (!f) continue;
+      if (inv.kind === "flag_if_subject" && f.subjects.some((x) => x.address.toLowerCase() === inv.address.toLowerCase()) && !d.flags.includes(inv.flag))
+        failures.push(`draft ${d.index} uses ${inv.address} without ${inv.flag}`);
+      if (inv.kind === "flag_if_amount" && f.amount === inv.amount && f.amount_unit === inv.unit && !d.flags.includes(inv.flag))
+        failures.push(`draft ${d.index} reads ${inv.amount} as ${inv.unit} without ${inv.flag}`);
+      if (inv.kind === "flag_if_field_set" && f[inv.field] && !inv.flags.some((x) => d.flags.includes(x)) && !c.source.includes(f[inv.field]!))
+        failures.push(`draft ${d.index} sets ${inv.field}=${f[inv.field]} with no flag`);
+    }
+  }
+  return failures;
+}
+
 async function runExtractionCase(c: ExtractionCase, serv: ServClient): Promise<CaseResult> {
   const failures: string[] = [];
   const result = await runExtraction(c.source, { name: "Demo Labs", chainId: 8453, tokenAddress: "0x1111111111111111111111111111111111111111", tokenSymbol: "DEMO" }, { serv, meter: async () => {} });
+  if (serv.live) {
+    const lf = liveFailures(c, result);
+    return { id: c.id, family: c.family, title: c.title, severity: c.severity, layer: c.layer, passed: lf.length === 0, failures: lf, observed: { source_flags: result.source_flags, drafts: result.drafts.map((d) => ({ quote: d.quote.slice(0, 120), flags: d.flags, fields: d.fields })), dropped: result.dropped_spans } };
+  }
   const e = c.expect;
   for (const f of e.sourceFlags ?? []) if (!result.source_flags.includes(f)) failures.push(`missing source flag ${f}`);
   if (e.drafts !== undefined && result.drafts.length !== e.drafts) failures.push(`expected ${e.drafts} draft(s), got ${result.drafts.length}`);

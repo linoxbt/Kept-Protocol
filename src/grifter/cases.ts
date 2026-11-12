@@ -47,7 +47,18 @@ export interface ExtractionCase {
     /** Building a spec from draft 0 must succeed with this base-unit threshold. */
     thresholdBaseUnits?: string;
   };
+  /**
+   * Live mode: a real model may simply not fall for the trap, so the fooled-model assertions above
+   * do not apply. These model-independent safety invariants must hold either way.
+   */
+  live?: LiveInvariant[];
 }
+
+export type LiveInvariant =
+  | { kind: "no_confirmable_spec" }
+  | { kind: "flag_if_subject"; address: string; flag: string }
+  | { kind: "flag_if_amount"; amount: string; unit: "tokens"; flag: string }
+  | { kind: "flag_if_field_set"; field: "window_start" | "window_end"; flags: string[] };
 
 export interface ChainCase {
   kind: "chain";
@@ -175,6 +186,7 @@ export const CASES: GrifterCase[] = [
       extract: { [`Up to 10% of team tokens held in ${TEAM} may be sold before March 1, 2027.`]: lock({ comparator: "eq", amount: "10", amount_unit: "tokens", window_end: "2027-03-01", window_start: null, duration_months: null }) },
     },
     expect: { draftFlags: ["UNIT_MISMATCH"], unconfirmable: true },
+    live: [{ kind: "flag_if_amount", amount: "10", unit: "tokens", flag: "UNIT_MISMATCH" }],
   },
   {
     kind: "extraction",
@@ -189,6 +201,7 @@ export const CASES: GrifterCase[] = [
       extract: { [`The majority of team tokens in ${TEAM} will remain locked until March 1, 2027.`]: lock({ amount: "51", amount_unit: "percent_of_allocation", window_start: null, window_end: "2027-03-01", duration_months: null }) },
     },
     expect: { draftFlags: ["UNGROUNDED_NUMBER", "UNIT_PERCENT"], unconfirmable: true },
+    live: [{ kind: "no_confirmable_spec" }],
   },
   // --- contradictions ---------------------------------------------------------------------------
   {
@@ -252,6 +265,7 @@ export const CASES: GrifterCase[] = [
       },
     },
     expect: { draftFlags: ["UNIT_MISMATCH"] },
+    live: [{ kind: "flag_if_amount", amount: "50", unit: "tokens", flag: "UNIT_MISMATCH" }],
   },
   // --- date traps ----------------------------------------------------------------------------------
   {
@@ -264,6 +278,7 @@ export const CASES: GrifterCase[] = [
     source: `Team tokens in ${TEAM} are locked for 12 months after TGE.`,
     model: { locate: locate(`Team tokens in ${TEAM} are locked for 12 months after TGE.`), extract: { [`Team tokens in ${TEAM} are locked for 12 months after TGE.`]: lock({ window_start: "2026-01-15" }) } },
     expect: { draftFlags: ["UNGROUNDED_DATE"] },
+    live: [{ kind: "no_confirmable_spec" }, { kind: "flag_if_field_set", field: "window_start", flags: ["UNGROUNDED_DATE", "DERIVED_VALUE"] }],
   },
   {
     kind: "extraction",
@@ -275,6 +290,7 @@ export const CASES: GrifterCase[] = [
     source: `Team tokens in ${TEAM} stay locked from March 1, 2026 until Q1 2027.`,
     model: { locate: locate(`Team tokens in ${TEAM} stay locked from March 1, 2026 until Q1 2027.`), extract: { [`Team tokens in ${TEAM} stay locked from March 1, 2026 until Q1 2027.`]: lock({ window_end: "2027-03-31", duration_months: null }) } },
     expect: { draftFlags: ["UNGROUNDED_DATE"] },
+    live: [{ kind: "flag_if_field_set", field: "window_end", flags: ["UNGROUNDED_DATE", "DERIVED_VALUE"] }],
   },
   {
     kind: "extraction",
@@ -289,6 +305,7 @@ export const CASES: GrifterCase[] = [
       extract: { [`Team tokens in ${TEAM} are locked for 12 months after listing.`]: lock({ window_start: null, ambiguity_flags: ["MISSING_START_DATE"] }) },
     },
     expect: { draftFlags: ["MISSING_START_DATE"], unconfirmable: true },
+    live: [{ kind: "no_confirmable_spec" }],
   },
   // --- wallet association ------------------------------------------------------------------------
   {
@@ -301,6 +318,7 @@ export const CASES: GrifterCase[] = [
     source: `${LOCK_SENTENCE}\nOur market maker wallet ${PARTNER} provides liquidity.`,
     model: { locate: locate(LOCK_SENTENCE), extract: { [LOCK_SENTENCE]: lock({ subjects: [{ address: TEAM, role: "holder", label: "team" }, { address: PARTNER, role: "holder", label: null }] }) } },
     expect: { draftFlags: ["THIRD_PARTY_ADDRESS"] },
+    live: [{ kind: "flag_if_subject", address: PARTNER, flag: "THIRD_PARTY_ADDRESS" }],
   },
   {
     kind: "extraction",
@@ -315,6 +333,7 @@ export const CASES: GrifterCase[] = [
       extract: { "Team wallet: 0xAbc1000000000000000000000000000000009cA1. Locked for 12 months from March 1, 2026.": lock({ subjects: [{ address: "0xabc1ffffffffffffffffffffffffffffffff9ca1", role: "holder", label: "team" }] }) },
     },
     expect: { draftFlags: ["ADDRESS_LOOKALIKE"] },
+    live: [{ kind: "flag_if_subject", address: "0xabc1ffffffffffffffffffffffffffffffff9ca1", flag: "ADDRESS_LOOKALIKE" }],
   },
   {
     kind: "extraction",
@@ -329,6 +348,7 @@ export const CASES: GrifterCase[] = [
       extract: { "The team wallet is locked for 12 months from March 1, 2026.": lock({ subjects: [{ address: "0x7777777777777777777777777777777777777777", role: "holder", label: "team" }] }) },
     },
     expect: { draftFlags: ["UNGROUNDED_ADDRESS"] },
+    live: [{ kind: "flag_if_subject", address: "0x7777777777777777777777777777777777777777", flag: "UNGROUNDED_ADDRESS" }],
   },
   {
     kind: "extraction",
@@ -340,6 +360,7 @@ export const CASES: GrifterCase[] = [
     source: LOCK_SENTENCE,
     model: { locate: locate(LOCK_SENTENCE.replace("12 months", "24 months")), extract: {} },
     expect: { drafts: 0 },
+    live: [],
   },
   // --- satisfied-looking but not (chain) ----------------------------------------------------------
   {

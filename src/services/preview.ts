@@ -23,12 +23,12 @@ export class RateLimited extends Error {
   }
 }
 
-export async function startPreview(input: { url?: string | null; text?: string | null; requester: string }, sql: Sql = db()): Promise<ExtractionRow> {
+export async function startPreview(input: { url?: string | null; text?: string | null; requester: string }, sql: Sql = db(), defer?: (work: () => Promise<void>) => void): Promise<ExtractionRow> {
   const limit = await hit(`tryit:${input.requester}`, env().TRYIT_PER_HOUR, 3600, sql);
   if (!limit.allowed) throw new RateLimited(limit.resetAt);
   const cap = input.url ? await fetchSource(input.url) : input.text ? captureText(input.text) : null;
   if (!cap) throw new Invalid("send a url or a text");
-  return runAndStoreExtraction({ project: null, sourceId: null, snapshot: null, preview: { text: cap.text, url: input.url ?? null, sha256: cap.sha256, requesterHash: input.requester } }, sql);
+  return runAndStoreExtraction({ project: null, sourceId: null, snapshot: null, preview: { text: cap.text, url: input.url ?? null, sha256: cap.sha256, requesterHash: input.requester } }, sql, { defer });
 }
 
 export interface PreviewCheck {

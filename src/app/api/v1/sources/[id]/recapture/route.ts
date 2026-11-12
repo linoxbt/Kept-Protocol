@@ -5,7 +5,7 @@ import { recaptureSource } from "@/services/precedent";
 export const maxDuration = 300;
 
 export const POST = route(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
-  requireAdmin(req);
+  await requireAdmin(req);
   const { id } = await ctx.params;
   return json(await recaptureSource(id));
 });

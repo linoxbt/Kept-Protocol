@@ -20,7 +20,7 @@ export const ConfirmBody = z.object({
 
 /** Confirm a draft: it becomes version 1 of a commitment and enters monitoring. */
 export const POST = route(async (req: Request) => {
-  requireAdmin(req);
+  await requireAdmin(req);
   const b = await parseBody(req, ConfirmBody);
   const { commitmentId } = await confirmDraft({
     extractionId: b.extraction_id,

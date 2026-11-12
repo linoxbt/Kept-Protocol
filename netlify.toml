@@ -1,14 +1,16 @@
-# Netlify hosts the public site and API (Next.js via Netlify's OpenNext runtime, detected
-# automatically). Long-running work — SERV extractions, Hindcast replays, monitoring — also runs
-# on the Railway web service and worker, which have no function time limit.
+# Netlify serves kept-protocol.netlify.app as an edge proxy in front of the Railway web service,
+# which runs the full Next.js app with no function time limit and reads its own bootstrapped
+# secrets. Netlify therefore needs no environment variables and holds no secrets.
 [build]
-  command = "npm run build"
-  publish = ".next"
+  command = "mkdir -p netlify-edge && echo 'Kept Protocol' > netlify-edge/index.txt"
+  publish = "netlify-edge"
 
 [build.environment]
-  NODE_VERSION = "22"
-  NEXT_TELEMETRY_DISABLED = "1"
+  NETLIFY_NEXT_PLUGIN_SKIP = "true"
 
-# Next.js runtime (OpenNext): turns SSR, route handlers and Cache Components into Netlify Functions.
-[[plugins]]
-  package = "@netlify/plugin-nextjs"
+[[redirects]]
+  from = "/*"
+  to = "https://kept-web-production-ef47f9ac.up.railway.app/:splat"
+  status = 200
+  force = true
+  headers = { X-From = "netlify" }

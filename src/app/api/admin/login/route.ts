@@ -1,4 +1,4 @@
-import { checkAdminKey, createSession, SESSION_COOKIE } from "@/lib/auth";
+import { checkAdminKey, createSession, sessionCookieHeader } from "@/lib/auth";
 import { clientIp, problem, route } from "@/lib/http";
 import { hit } from "@/services/ratelimit";
 
@@ -9,13 +9,13 @@ export const POST = route(async (req: Request) => {
   const key = String(form?.get("key") ?? "");
   const next = String(form?.get("next") ?? "/admin");
   const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/admin";
-  if (!checkAdminKey(key)) return Response.redirect(new URL(`/admin/login?error=1`, req.url), 303);
+  if (!(await checkAdminKey(key))) return Response.redirect(new URL(`/admin/login?error=1`, req.url), 303);
   const s = createSession();
   return new Response(null, {
     status: 303,
     headers: {
       location: safeNext,
-      "set-cookie": `${SESSION_COOKIE}=${s.value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${s.maxAge}${process.env.NODE_ENV === "production" ? "; Secure" : ""}`,
+      "set-cookie": sessionCookieHeader(s.value, s.maxAge),
     },
   });
 });

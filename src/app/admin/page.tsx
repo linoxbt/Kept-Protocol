@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { db } from "@/db/client";
 import { env } from "@/lib/env";
 import { isAdminSession } from "@/lib/session";
+import { adminSetupOpen } from "@/lib/auth";
 import { getSigner, isDevSigner } from "@/receipts/signer";
 import { pendingRoot } from "@/services/anchor";
 import { servAvailable, servStats, spentTodayUsd } from "@/services/serv";
@@ -23,7 +24,7 @@ export default function AdminPage() {
 
 async function Admin() {
   await connection();
-  if (!(await isAdminSession())) redirect("/admin/login");
+  if (!(await isAdminSession())) redirect((await adminSetupOpen()) ? "/admin/setup" : "/admin/login");
   const sql = db();
   const [projects, sources, extractions, pages, stats, spent, root] = await Promise.all([
     sql<{ id: string; name: string; slug: string }[]>`select id, name, slug from projects order by created_at desc`,
