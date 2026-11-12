@@ -1,3 +1,4 @@
+import { seeOther } from "@/lib/http";
 import { checkAdminKey, createSession, sessionCookieHeader } from "@/lib/auth";
 import { clientIp, problem, route } from "@/lib/http";
 import { hit } from "@/services/ratelimit";
@@ -9,7 +10,7 @@ export const POST = route(async (req: Request) => {
   const key = String(form?.get("key") ?? "");
   const next = String(form?.get("next") ?? "/admin");
   const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/admin";
-  if (!(await checkAdminKey(key))) return Response.redirect(new URL(`/admin/login?error=1`, req.url), 303);
+  if (!(await checkAdminKey(key))) return seeOther(`/admin/login?error=1`);
   const s = createSession();
   return new Response(null, {
     status: 303,

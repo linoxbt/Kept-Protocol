@@ -105,3 +105,11 @@ export function baseUrl(req?: Request): string {
   }
   return "http://localhost:3000";
 }
+
+/**
+ * 303 redirect with a relative Location. Behind a proxy (Netlify → Railway) the request URL is the
+ * internal address, so absolute redirects built from it would send browsers to the wrong host.
+ */
+export function seeOther(path: string): Response {
+  return new Response(null, { status: 303, headers: { location: path } });
+}

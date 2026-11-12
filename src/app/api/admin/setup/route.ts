@@ -1,3 +1,4 @@
+import { seeOther } from "@/lib/http";
 import { db } from "@/db/client";
 import { adminSetupOpen, createSession, sessionCookieHeader } from "@/lib/auth";
 import { clientIp, problem, route } from "@/lib/http";
@@ -11,13 +12,13 @@ export const POST = route(async (req: Request) => {
   const form = await req.formData().catch(() => null);
   const password = String(form?.get("password") ?? "");
   const confirm = String(form?.get("confirm") ?? "");
-  const back = (e: string) => Response.redirect(new URL(`/admin/setup?error=${e}`, req.url), 303);
+  const back = (e: string) => seeOther(`/admin/setup?error=${e}`);
   if (password.length < 12) return back("short");
   if (password !== confirm) return back("mismatch");
-  if (!(await adminSetupOpen())) return Response.redirect(new URL("/admin/login", req.url), 303);
+  if (!(await adminSetupOpen())) return seeOther("/admin/login");
   // `on conflict do nothing`: if two people race, only the first password is ever stored.
   const r = await db()`insert into kept_secrets (name, value) values ('ADMIN_PASSWORD_HASH', ${hashPassword(password)}) on conflict (name) do nothing`;
-  if (r.count === 0) return Response.redirect(new URL("/admin/login", req.url), 303);
+  if (r.count === 0) return seeOther("/admin/login");
   await db()`insert into admin_log (action) values ('admin_setup')`;
   const s = createSession();
   return new Response(null, { status: 303, headers: { location: "/admin", "set-cookie": sessionCookieHeader(s.value, s.maxAge) } });
