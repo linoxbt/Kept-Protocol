@@ -22,34 +22,33 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
       <body className="min-h-screen flex flex-col">
-        <header className="sticky top-0 z-40 border-b border-line bg-bg/80 backdrop-blur-xl">
-          <nav className="container-k h-14 flex items-center gap-8">
-            <Link href="/" className="flex items-center gap-2.5 shrink-0" aria-label="Kept home">
+        <header className="fixed inset-x-0 top-3 z-50 px-3">
+          <nav className="mx-auto max-w-[980px] h-14 rounded-2xl border border-line-strong bg-panel/80 backdrop-blur-xl flex items-center gap-2 pl-4 pr-2 shadow-[0_10px_40px_-12px_rgba(0,0,0,0.7)]">
+            <Link href="/" className="flex items-center gap-2.5 shrink-0 mr-auto md:mr-0" aria-label="Kept home">
               <Mark />
               <span className="text-[17px] font-medium tracking-[-0.03em]">Kept</span>
             </Link>
-            <div className="hidden md:flex items-center gap-7">
+            <div className="hidden md:flex flex-1 items-center justify-center gap-1">
               {NAV.map(([label, href]) => (
-                <Link key={href} href={href} className="label !text-muted hover:!text-ink transition-colors">
+                <Link key={href} href={href} className="px-3.5 h-9 inline-flex items-center rounded-full text-[14px] text-muted hover:text-ink hover:bg-panel-2 transition-colors">
                   {label}
                 </Link>
               ))}
             </div>
-            <span className="flex-1" />
-            <span className="hidden sm:flex items-center gap-2 label">
-              <span className="live-dot" /> Base mainnet
-            </span>
-            <Link href="/try" className="btn !h-9 !px-4">
+            <details className="md:hidden relative">
+              <summary className="list-none cursor-pointer h-10 px-3 inline-flex items-center label !text-ink">Menu</summary>
+              <div className="absolute right-0 top-12 w-48 rounded-xl border border-line-strong bg-panel p-2 flex flex-col">
+                {NAV.map(([label, href]) => (
+                  <Link key={href} href={href} className="px-3 py-2.5 rounded-lg text-sm hover:bg-panel-2">
+                    {label}
+                  </Link>
+                ))}
+              </div>
+            </details>
+            <Link href="/try" className="h-10 px-4 inline-flex items-center rounded-xl bg-accent text-white text-[14px] font-medium hover:brightness-110 transition">
               Check a project
             </Link>
           </nav>
-          <div className="md:hidden container-k h-10 flex items-center gap-6 border-t border-line overflow-x-auto">
-            {NAV.map(([label, href]) => (
-              <Link key={href} href={href} className="label">
-                {label}
-              </Link>
-            ))}
-          </div>
         </header>
         <main className="flex-1 w-full">{children}</main>
         <footer className="border-t border-line mt-24">

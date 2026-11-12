@@ -16,7 +16,7 @@
   --color-ink: #eceef1;
   --color-muted: #8b929c;
   --color-faint: #5a616b;
-  --color-accent: #5b7cff;
+  --color-accent: #2f6bff;
   --color-accent-ink: #0a0b0d;
   --color-verified: #3ddc97;
   --color-atrisk: #f5b82e;
@@ -27,6 +27,11 @@
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
   --font-serif: "Instrument Serif", ui-serif, Georgia, serif;
+}
+
+html,
+body {
+  overflow-x: clip;
 }
 
 html {
@@ -310,6 +315,12 @@ del.diff {
   mask-image: linear-gradient(to bottom, black, transparent);
 }
 
+}
+
+/* Dot grid for illustration panels */
+.dotgrid {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.16) 1px, transparent 1px);
+  background-size: 22px 22px;
 }
 
 /* Motion */

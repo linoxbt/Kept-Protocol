@@ -1,157 +1,137 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
+import { BlockField } from "@/components/blockfield";
+import { ChainBar } from "@/components/chainbar";
+import { Corners } from "@/components/corners";
 import { Reveal, Ticker } from "@/components/motion";
 import { StatusChip } from "@/components/status";
 import { ago, prettyReason } from "@/components/ui";
 import { env } from "@/lib/env";
 import { feed, globalStats } from "@/services/queries";
-import { servStats } from "@/services/serv";
 
 export default function Home() {
   return (
-    <div className="relative">
-      <div className="aura" />
+    <div>
       <Hero />
-      <Suspense fallback={<div className="h-14 border-y border-line" />}>
-        <Marquee />
-      </Suspense>
-      <HowItWorks />
+      <Split />
+      <Steps />
+      <Facts />
       <LiveRecord />
       <TheCatch />
       <Pricing />
-      <VerifyYourself />
+      <Verify />
     </div>
   );
 }
 
-function SectionHead({ n, name, title, aside }: { n: string; name: string; title: React.ReactNode; aside?: React.ReactNode }) {
+function Head({ n, name, title, sub }: { n: string; name: string; title: React.ReactNode; sub?: string }) {
   return (
-    <div className="grid md:grid-cols-12 gap-6 mb-12">
-      <p className="section-index md:col-span-3 pt-3">
+    <Reveal className="text-center max-w-3xl mx-auto mb-14">
+      <p className="section-index mb-5">
         <b>{n}</b> / {name}
       </p>
-      <h2 className="title md:col-span-7">{title}</h2>
-      {aside ? <div className="md:col-span-2 md:text-right self-end">{aside}</div> : null}
-    </div>
+      <h2 className="title">{title}</h2>
+      {sub ? <p className="text-muted text-lg mt-5 leading-relaxed">{sub}</p> : null}
+    </Reveal>
   );
 }
 
 function Hero() {
   return (
-    <section className="relative container-k pt-20 md:pt-32 pb-20 md:pb-24">
-      <div className="absolute inset-0 gridlines opacity-40 pointer-events-none" />
-      <div className="relative grid lg:grid-cols-12 gap-10 lg:gap-6 items-end">
-        <div className="lg:col-span-8">
-          <Reveal>
-            <p className="label mb-8 flex items-center gap-3">
-              <span className="inline-block w-6 h-px bg-accent" /> Commitment verification on Base
-            </p>
-          </Reveal>
-          <Reveal delay={80}>
-            <h1 className="display">
-              Projects rewrite their promises after breaking them.{" "}
-              <span className="serif italic text-accent tracking-[-0.02em]">Kept catches it.</span>
-            </h1>
-          </Reveal>
-          <Reveal delay={160}>
-            <p className="text-muted text-lg leading-relaxed max-w-xl mt-8">
-              Public crypto promises become structured commitments, checked by deterministic code against finalized chain data. Every result is cited,
-              versioned, replayable and signed.
-            </p>
-          </Reveal>
-          <Reveal delay={220}>
-            <form action="/try" method="get" className="mt-10 flex flex-col sm:flex-row gap-2 max-w-2xl p-1.5 rounded-full border border-line-strong bg-panel/70 backdrop-blur">
-              <input name="url" type="url" required placeholder="Paste a project's docs or tokenomics URL" className="flex-1 bg-transparent px-4 h-11 text-[15px] outline-none placeholder:text-faint" aria-label="Project URL" />
-              <button className="btn" type="submit">
-                Check promises <span aria-hidden>→</span>
-              </button>
-            </form>
-            <p className="text-xs text-faint mt-3 ml-5">No login. Results are an unconfirmed preview and are never published.</p>
-          </Reveal>
-        </div>
-        <div className="lg:col-span-4">
-          <Reveal delay={260}>
-            <Suspense fallback={<div className="skeleton h-[380px]" />}>
-              <Ledger />
-            </Suspense>
-          </Reveal>
-        </div>
+    <section className="relative min-h-[100svh] flex flex-col overflow-hidden">
+      <BlockField />
+      <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(60%_50%_at_50%_45%,transparent_0%,var(--color-bg)_85%)]" />
+      <div className="relative flex-1 flex flex-col items-center justify-center text-center px-5 pt-32 pb-16">
+        <Reveal>
+          <p className="inline-flex items-center gap-2 h-8 px-3.5 rounded-full border border-line-strong bg-panel/70 backdrop-blur text-[13px] text-muted">
+            <span className="live-dot" /> Live on Base · built on SERV Reasoning
+          </p>
+        </Reveal>
+        <Reveal delay={80}>
+          <h1 className="display max-w-[15ch] mx-auto mt-8">
+            Every promise, <span className="serif italic font-normal">checked</span> on-chain.
+          </h1>
+        </Reveal>
+        <Reveal delay={160}>
+          <p className="text-muted text-lg md:text-xl leading-relaxed max-w-2xl mx-auto mt-7">
+            Projects rewrite their promises after breaking them. Kept reads the promise, checks it against finalized Base blocks with deterministic code,
+            and signs a receipt anyone can verify.
+          </p>
+        </Reveal>
+        <Reveal delay={240} className="w-full">
+          <form action="/try" method="get" className="mt-10 mx-auto flex flex-col sm:flex-row gap-2 max-w-xl p-1.5 rounded-2xl border border-line-strong bg-panel/80 backdrop-blur">
+            <input name="url" type="url" required placeholder="Paste a project's tokenomics or docs URL" className="flex-1 bg-transparent px-4 h-12 text-[15px] outline-none placeholder:text-faint" aria-label="Project URL" />
+            <button className="h-12 px-6 rounded-xl bg-accent text-white font-medium hover:brightness-110 transition whitespace-nowrap" type="submit">
+              Check promises
+            </button>
+          </form>
+          <p className="text-xs text-faint mt-3">No login · results are an unconfirmed preview and never published</p>
+        </Reveal>
+        <Reveal delay={300}>
+          <div className="flex items-center justify-center gap-6 mt-10 text-sm">
+            <Link href="/projects" className="u text-ink">Browse the record →</Link>
+            <Link href="/docs" className="u text-muted">API &amp; x402</Link>
+          </div>
+        </Reveal>
+      </div>
+      <div className="relative">
+        <ChainBar />
       </div>
     </section>
   );
 }
 
-async function Ledger() {
-  await connection();
-  const [s, serv] = await Promise.all([globalStats(), servStats()]);
+function Split() {
   return (
-    <div className="proof !p-0">
-      <div className="flex items-center justify-between px-5 h-11 border-b border-line">
-        <span className="label">Live ledger</span>
-        <span className="flex items-center gap-2 label">
-          <span className="live-dot" /> finalized blocks
-        </span>
-      </div>
-      <div className="px-5 pt-6 pb-5 border-b border-line">
-        <p className="numeral text-[88px]">
-          <Ticker value={s.commitments} />
-        </p>
-        <p className="text-sm text-muted mt-2">commitments under monitoring</p>
-      </div>
-      <dl className="grid grid-cols-2">
-        {(
-          [
-            ["At risk", s.at_risk, "var(--color-atrisk)"],
-            ["Breached", s.breached, "var(--color-breached)"],
-            ["Signed receipts", s.receipts, undefined],
-            ["SERV calls / commitment", serv.perCommitment, undefined],
-          ] as [string, number, string | undefined][]
-        ).map(([label, value, color], i) => (
-          <div key={label} className={`px-5 py-4 ${i % 2 === 0 ? "border-r" : ""} ${i < 2 ? "border-b" : ""} border-line`}>
-            <dt className="text-xs text-muted flex items-center gap-2">
-              {color ? <span className="w-1.5 h-1.5 rounded-full" style={{ background: color }} /> : null}
-              {label}
-            </dt>
-            <dd className="numeral text-3xl mt-2">{label.startsWith("SERV") ? value || "—" : <Ticker value={value} />}</dd>
+    <section className="container-k py-24">
+      <div className="grid lg:grid-cols-2 border border-line">
+        <Reveal className="relative bg-accent text-white p-10 md:p-14 min-h-[480px] flex flex-col justify-between">
+          <Corners className="text-white/60" />
+          <p className="text-center text-[15px] text-white/80">The commitment stack</p>
+          <div className="text-center">
+            <p className="text-[clamp(2.2rem,4vw,3.6rem)] font-medium tracking-[-0.04em] leading-[1.02]">
+              Promise. Condition.
+              <br />
+              Evidence. Receipt.
+            </p>
+            <p className="text-white/80 mt-6 max-w-md mx-auto leading-relaxed">
+              Four records, one chain of custody: what was said, exactly what is tested, what Base shows, and a signed, hash-chained result.
+            </p>
           </div>
-        ))}
-      </dl>
-    </div>
-  );
-}
-
-async function Marquee() {
-  await connection();
-  const items = await feed(14);
-  const fallback = [
-    "Code decides facts",
-    "SERV reads the promises",
-    "Every check is signed",
-    "Breach needs two providers",
-    "Versions are never rewritten",
-    "Finalized blocks only",
-  ];
-  const cells = items.length
-    ? items.map((i) => (
-        <span key={`${i.commitment_id}${i.at.toISOString()}`} className="inline-flex items-center gap-3 px-8">
-          <StatusChip status={i.to_status} final={i.final} />
-          <span className="text-sm text-muted max-w-[34ch] truncate whitespace-nowrap">{i.summary}</span>
-          <span className="mono text-xs text-faint whitespace-nowrap">{ago(i.at)}</span>
-        </span>
-      ))
-    : fallback.map((t) => (
-        <span key={t} className="inline-flex items-center gap-8 px-8 label">
-          {t} <span className="text-accent">✦</span>
-        </span>
-      ));
-  return (
-    <div className="marquee border-y border-line h-14 flex items-center overflow-hidden" aria-label="Latest results">
-      <div className="marquee-track">
-        {cells}
-        {cells}
+          <div className="flex justify-center gap-1.5">
+            <span className="h-1 w-8 rounded-full bg-white" />
+            <span className="h-1 w-1 rounded-full bg-white/50" />
+            <span className="h-1 w-1 rounded-full bg-white/50" />
+            <span className="h-1 w-1 rounded-full bg-white/50" />
+          </div>
+        </Reveal>
+        <Reveal delay={120} className="relative dotgrid p-8 md:p-14 flex items-center justify-center min-h-[480px] border-t lg:border-t-0 lg:border-l border-line">
+          <Corners />
+          <div className="w-full max-w-md proof !bg-bg">
+            <div className="flex items-center justify-between mb-5">
+              <span className="label">Receipt · example</span>
+              <StatusChip status="breached" final />
+            </div>
+            <p className="text-[15px] leading-relaxed">“Team tokens are locked for 12 months. No team tokens will be transferred before then.”</p>
+            <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-3 text-[13px]">
+              <dt className="text-muted">Outflow</dt>
+              <dd className="mono text-right">4,000,000 / 0</dd>
+              <dt className="text-muted">Method</dt>
+              <dd className="mono text-right">erc20_outflow_v1</dd>
+              <dt className="text-muted">Providers</dt>
+              <dd className="mono text-right">2 / 2 confirmed</dd>
+              <dt className="text-muted">sha256</dt>
+              <dd className="mono text-right">f4b77d…752fd</dd>
+            </dl>
+            <div className="mt-6 pt-4 border-t border-line flex items-center justify-between text-[12px]">
+              <span className="mono text-faint">EIP-191 signed · hash-chained</span>
+              <span className="mono text-verified">✓ verifies</span>
+            </div>
+          </div>
+        </Reveal>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -159,174 +139,195 @@ const STEPS = [
   {
     n: "01",
     t: "Read",
-    d: "SERV Reasoning locates the promises in a source and extracts structured fields. Every number, date and address must appear in the quote, or the draft goes to a reviewer.",
+    d: "SERV Reasoning locates promises and extracts fields. Every number, date and address must appear in the quote, or the draft goes to a reviewer.",
     k: "Prompt guard · Kronos · Shadow Agent · Multipath",
   },
   {
     n: "02",
     t: "Check",
-    d: "Pure, versioned functions test the condition against finalized Base blocks. A breach needs an attributed address and a second, independent provider. No model output ever sets a status.",
+    d: "Pure, versioned functions test the condition on finalized blocks. A breach needs an attributed address and a second, independent provider.",
     k: "erc20_outflow · vesting_schedule · burn",
   },
   {
     n: "03",
     t: "Prove",
-    d: "Every check emits a receipt: canonical JSON, SHA-256, hash-chained, EIP-191 signed, anchored on Base. Every version of the promise is kept, so a rewrite after the fact is flagged.",
+    d: "Every check emits a signed, hash-chained receipt, anchored on Base. Every version of the promise is kept, so a rewrite after the fact is flagged.",
     k: "RFC 8785 · EIP-191 · EAS",
   },
 ];
 
-function HowItWorks() {
+function Steps() {
   return (
-    <section className="container-k py-28">
-      <SectionHead n="01" name="How it works" title={<>Language in, <span className="serif italic">facts</span> out.</>} />
-      <div className="grid md:grid-cols-3 border-t border-line">
+    <section className="container-k py-24">
+      <Head n="01" name="How it works" title={<>Language in, <span className="serif italic font-normal">facts</span> out.</>} sub="The model reads. Code decides. No AI output is ever the final word on what happened on-chain." />
+      <div className="grid md:grid-cols-3 gap-4">
         {STEPS.map((s, i) => (
-          <Reveal key={s.n} delay={i * 90} className={`pt-8 pb-10 md:pr-10 ${i > 0 ? "md:border-l md:pl-10" : ""} border-line`}>
-            <p className="numeral text-[64px] text-faint">{s.n}</p>
-            <h3 className="text-2xl tracking-[-0.03em] mt-6 mb-3">{s.t}</h3>
-            <p className="text-muted leading-relaxed">{s.d}</p>
-            <p className="label mt-6 !normal-case !tracking-normal text-faint">{s.k}</p>
+          <Reveal key={s.n} delay={i * 90} className="relative border border-line bg-panel p-8 pt-12 min-h-[320px] flex flex-col group hover:border-line-strong transition-colors">
+            <Corners />
+            <p className="numeral text-[72px] text-line-strong group-hover:text-accent transition-colors">{s.n}</p>
+            <h3 className="text-2xl tracking-[-0.03em] mt-8 mb-3">{s.t}</h3>
+            <p className="text-muted leading-relaxed flex-1">{s.d}</p>
+            <p className="mono text-[11px] text-faint mt-6">{s.k}</p>
           </Reveal>
         ))}
       </div>
+    </section>
+  );
+}
+
+async function FactsInner() {
+  await connection();
+  const s = await globalStats();
+  const live: [string, string][] = [
+    [String(s.commitments), "commitments monitored"],
+    [String(s.receipts), "signed receipts"],
+    [String(s.at_risk), "at risk"],
+    [String(s.breached), "breached"],
+  ];
+  const system: [string, string][] = [
+    ["23 / 23", "adversarial Grifter cases passing against live SERV"],
+    ["2", "independent RPC providers before any breach"],
+    ["0.2 s", "Base block time, finalized blocks only"],
+    ["5", "append-only evidence tables, enforced in Postgres"],
+  ];
+  const hasData = s.commitments > 0;
+  return (
+    <div className="grid grid-cols-2 lg:grid-cols-4 border-y border-line">
+      {(hasData ? live : system).map(([v, l], i) => (
+        <div key={l} className={`px-6 py-10 text-center border-line ${i % 2 === 1 ? "border-l" : ""} ${i === 2 ? "lg:border-l" : ""} ${i >= 2 ? "border-t lg:border-t-0" : ""}`}>
+          <p className="numeral text-[clamp(2.5rem,5vw,4.5rem)]">{hasData ? <Ticker value={Number(v)} /> : v}</p>
+          <p className="text-sm text-muted mt-4 max-w-[22ch] mx-auto">{l}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Facts() {
+  return (
+    <section className="py-10">
+      <Suspense fallback={<div className="h-[180px] border-y border-line" />}>
+        <FactsInner />
+      </Suspense>
     </section>
   );
 }
 
 function LiveRecord() {
   return (
-    <section className="container-k py-20">
-      <SectionHead
-        n="02"
-        name="Live record"
-        title={<>Every status change, <span className="serif italic">with its receipt.</span></>}
-        aside={<Link className="label u !text-ink" href="/projects">All projects →</Link>}
-      />
+    <section className="container-k py-24">
+      <Head n="02" name="Live record" title={<>Every status change, <span className="serif italic font-normal">with its receipt.</span></>} />
       <Suspense fallback={<div className="skeleton h-72" />}>
         <FeedTable />
       </Suspense>
+      <p className="text-center mt-8">
+        <Link className="u text-sm" href="/projects">All projects →</Link>
+      </p>
     </section>
   );
 }
 
 async function FeedTable() {
   await connection();
-  const items = await feed(10);
+  const items = await feed(8);
   if (!items.length) {
     return (
-      <div className="border border-line p-10 text-center">
-        <p className="subtitle">No results yet.</p>
-        <p className="text-muted mt-2">The first confirmed commitment appears here with its signed receipt.</p>
+      <div className="relative border border-line p-14 text-center dotgrid">
+        <Corners />
+        <p className="subtitle">The record starts with the first confirmed commitment.</p>
+        <p className="text-muted mt-3 max-w-lg mx-auto">Each status change lands here with its signed receipt. Until then, try any project&apos;s docs as an unconfirmed preview.</p>
+        <Link href="/try" className="inline-flex mt-8 h-11 px-5 items-center rounded-xl bg-accent text-white font-medium hover:brightness-110 transition">Check a project</Link>
       </div>
     );
   }
   return (
-    <table className="data stack">
-      <thead>
-        <tr>
-          <th>Status</th>
-          <th>Condition</th>
-          <th>Project</th>
-          <th className="text-right">When</th>
-          <th className="text-right">Proof</th>
-        </tr>
-      </thead>
-      <tbody>
-        {items.map((i) => (
-          <tr key={`${i.commitment_id}-${i.at.toISOString()}`}>
-            <td className="w-48">
-              <StatusChip status={i.to_status} final={i.final} />
-            </td>
-            <td>
-              <Link href={`/commitments/${i.commitment_id}`} className="u">{i.summary}</Link>
-              <p className="text-xs text-faint mt-1">{prettyReason(i.reason)}</p>
-            </td>
-            <td className="text-sm text-muted whitespace-nowrap">
-              <Link href={`/projects/${i.project_slug}`} className="u">{i.project_name}</Link>
-              {i.is_demo ? <span className="label !text-disputed ml-2">demo</span> : null}
-            </td>
-            <td className="mono text-xs text-muted text-right whitespace-nowrap">{ago(i.at)}</td>
-            <td className="text-right">{i.receipt_id ? <Link className="label u !text-accent" href={`/receipts/${i.receipt_id}`}>receipt</Link> : null}</td>
+    <div className="border border-line">
+      <table className="data stack">
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Condition</th>
+            <th>Project</th>
+            <th className="text-right">When</th>
+            <th className="text-right">Proof</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {items.map((i) => (
+            <tr key={`${i.commitment_id}-${i.at.toISOString()}`}>
+              <td className="w-48"><StatusChip status={i.to_status} final={i.final} /></td>
+              <td>
+                <Link href={`/commitments/${i.commitment_id}`} className="u">{i.summary}</Link>
+                <p className="text-xs text-faint mt-1">{prettyReason(i.reason)}</p>
+              </td>
+              <td className="text-sm text-muted whitespace-nowrap">
+                <Link href={`/projects/${i.project_slug}`} className="u">{i.project_name}</Link>
+                {i.is_demo ? <span className="label !text-disputed ml-2">demo</span> : null}
+              </td>
+              <td className="mono text-xs text-muted text-right whitespace-nowrap">{ago(i.at)}</td>
+              <td className="text-right">{i.receipt_id ? <Link className="label u !text-accent" href={`/receipts/${i.receipt_id}`}>receipt</Link> : null}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
 function TheCatch() {
   return (
-    <section className="container-k py-28">
-      <SectionHead n="03" name="The catch" title={<>A promise changed <span className="serif italic">after</span> the tokens moved.</>} />
-      <div className="grid lg:grid-cols-12 gap-6">
-        <Reveal className="lg:col-span-7">
-          <div className="proof">
-            <p className="label mb-5">Example · version diff</p>
-            <div className="grid sm:grid-cols-2 gap-px bg-line border border-line">
-              <div className="bg-panel p-5">
-                <p className="label mb-3">v1 · Mar 01</p>
-                <p className="leading-relaxed">
-                  Team tokens are locked for 12 months. <del className="diff">No team tokens will be transferred</del> before then.
-                </p>
-              </div>
-              <div className="bg-panel p-5">
-                <p className="label mb-3">v2 · Dec 20</p>
-                <p className="leading-relaxed">
-                  Team tokens are locked for 12 months. <ins className="diff">Up to 5,000,000 team tokens may be released</ins> before then.
-                </p>
-              </div>
+    <section className="container-k py-24">
+      <Head
+        n="03"
+        name="The catch"
+        title={<>A promise changed <span className="serif italic font-normal">after</span> the tokens moved.</>}
+        sub="Kept versions every promise. When a revision excuses a transfer that already happened, the record says so — neutrally, with the transaction and both versions attached."
+      />
+      <Reveal className="max-w-4xl mx-auto">
+        <div className="relative border border-line bg-panel p-6 md:p-10">
+          <Corners />
+          <div className="grid md:grid-cols-2 gap-px bg-line border border-line">
+            <div className="bg-bg p-6">
+              <p className="label mb-3">v1 · Mar 01</p>
+              <p className="leading-relaxed">Team tokens are locked for 12 months. <del className="diff">No team tokens will be transferred</del> before then.</p>
             </div>
-            <div className="mt-5 flex items-start gap-3 border border-atrisk/40 bg-atrisk/[0.06] p-4">
-              <span className="w-1.5 h-1.5 rounded-full bg-atrisk mt-2 shrink-0" />
-              <p className="text-sm">
-                <span className="mono text-atrisk text-xs tracking-[0.1em] uppercase mr-2">Retroactive revision</span>
-                4,000,000 tokens left the team wallet on Dec 15. They fail v1 and pass v2, which was published five days later.
-              </p>
+            <div className="bg-bg p-6">
+              <p className="label mb-3">v2 · Dec 20</p>
+              <p className="leading-relaxed">Team tokens are locked for 12 months. <ins className="diff">Up to 5,000,000 team tokens may be released</ins> before then.</p>
             </div>
           </div>
-        </Reveal>
-        <Reveal delay={120} className="lg:col-span-5 flex flex-col justify-between gap-10">
-          <p className="text-lg text-muted leading-relaxed">
-            Kept captures every source, hashes it and versions the promise. When a revision excuses a transfer that already happened, the record says so —
-            neutrally, mechanically, with the transaction and both versions attached. Hindcast then replays both versions over the same evidence.
-          </p>
-          <div className="grid grid-cols-3 border-t border-line">
-            {[
-              ["5", "append-only evidence tables"],
-              ["2", "independent RPC providers"],
-              ["23", "adversarial Grifter cases"],
-            ].map(([n, l]) => (
-              <div key={l} className="pt-5 pr-3">
-                <p className="numeral text-5xl">{n}</p>
-                <p className="text-xs text-muted mt-3">{l}</p>
-              </div>
-            ))}
+          <div className="mt-5 flex items-start gap-3 rounded-xl border border-atrisk/40 bg-atrisk/[0.07] p-4">
+            <span className="w-1.5 h-1.5 rounded-full bg-atrisk mt-2 shrink-0" />
+            <p className="text-sm">
+              <span className="mono text-atrisk text-[11px] tracking-[0.12em] uppercase mr-2">Retroactive revision</span>
+              4,000,000 tokens left the team wallet on Dec 15. They fail v1 and pass v2, which was published five days later.
+            </p>
           </div>
-        </Reveal>
-      </div>
+          <p className="label text-center mt-6 !text-faint">Example</p>
+        </div>
+      </Reveal>
     </section>
   );
 }
 
 function Pricing() {
   const price = env().X402_PRICE;
-  const tiers: [string, string, string, string][] = [
-    ["Launchpads", "$1,200", "per launched project / year", "Bulk registration, public project pages, alerts, embeds"],
-    ["Pro", "$49", "per month", "Watchlists, alerts, Hindcast and exports for researchers and funds"],
-    ["Agents", price, "per query, USDC over x402", "Signed records with coverage — no record is never read as clean"],
-    ["Data", "$2,000+", "per month", "Bulk API and historical exports for analytics platforms"],
+  const tiers: [string, string, string, string, boolean][] = [
+    ["Launchpads", "$1,200", "per launched project / year", "Public pages and alerts for every project you launch", true],
+    ["Pro", "$49", "per month", "Watchlists, alerts, Hindcast and exports", false],
+    ["Agents", price, "per query · USDC over x402", "Signed records with coverage, machine-readable", false],
+    ["Data", "$2,000+", "per month", "Bulk API and historical exports", false],
   ];
   return (
-    <section className="container-k py-20">
-      <SectionHead n="04" name="Pricing" title={<>Priced for whoever <span className="serif italic">relies</span> on the promise.</>} aside={<p className="text-xs text-faint">Starting points to test with the first pilot.</p>} />
-      <div className="grid sm:grid-cols-2 lg:grid-cols-4 border-t border-l border-line">
-        {tiers.map(([name, amount, unit, desc], i) => (
-          <Reveal key={name} delay={i * 70} className="border-r border-b border-line p-7 group hover:bg-panel transition-colors">
-            <p className="label">{name}</p>
-            <p className="numeral text-5xl mt-10 group-hover:text-accent transition-colors">{amount}</p>
-            <p className="text-xs text-muted mt-3">{unit}</p>
-            <p className="text-sm text-muted mt-8 leading-relaxed">{desc}</p>
+    <section className="container-k py-24">
+      <Head n="04" name="Pricing" title={<>Priced for whoever <span className="serif italic font-normal">relies</span> on the promise.</>} sub="Starting points to test with the first launchpad pilot." />
+      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {tiers.map(([name, amount, unit, desc, featured], i) => (
+          <Reveal key={name} delay={i * 70} className={`relative rounded-2xl p-7 min-h-[280px] flex flex-col ${featured ? "bg-accent text-white" : "border border-line bg-panel"}`}>
+            <p className={`label ${featured ? "!text-white/80" : ""}`}>{name}</p>
+            <p className="numeral text-5xl mt-10">{amount}</p>
+            <p className={`text-xs mt-3 ${featured ? "text-white/80" : "text-muted"}`}>{unit}</p>
+            <p className={`text-sm mt-auto pt-8 leading-relaxed ${featured ? "text-white/90" : "text-muted"}`}>{desc}</p>
           </Reveal>
         ))}
       </div>
@@ -334,46 +335,34 @@ function Pricing() {
   );
 }
 
-function VerifyYourself() {
+function Verify() {
   return (
-    <section className="container-k py-28">
-      <div className="grid lg:grid-cols-12 gap-10 items-center">
-        <div className="lg:col-span-5">
-          <p className="section-index mb-6">
-            <b>05</b> / Verify, don&apos;t trust
-          </p>
-          <h2 className="title">
-            Every receipt checks out <span className="serif italic">without us.</span>
-          </h2>
-          <p className="text-muted mt-6 max-w-md leading-relaxed">
-            Recompute the hash, recover the signer, re-fetch the logs from your own RPC and rerun the same method version. If anything differs, the receipt fails.
-          </p>
-          <div className="flex gap-3 mt-8">
-            <Link href="/docs#verify" className="btn">Read the guide</Link>
-            <Link href="/try" className="btn btn-quiet">Try a project</Link>
+    <section className="container-k py-24">
+      <Head n="05" name="Verify, don't trust" title={<>Every receipt checks out <span className="serif italic font-normal">without us.</span></>} sub="Recompute the hash, recover the signer, re-fetch the logs from your own RPC and rerun the same method version." />
+      <Reveal className="max-w-3xl mx-auto">
+        <div className="rounded-2xl border border-line-strong overflow-hidden bg-panel">
+          <div className="flex items-center gap-2 px-4 h-11 border-b border-line">
+            <span className="w-3 h-3 rounded-full bg-line-strong" />
+            <span className="w-3 h-3 rounded-full bg-line-strong" />
+            <span className="w-3 h-3 rounded-full bg-line-strong" />
+            <span className="mono text-xs text-muted mx-auto pr-12">kept-verify</span>
           </div>
+          <pre className="mono text-[13px] leading-7 p-6 md:p-8 overflow-x-auto">
+            <span className="text-faint">$ </span>npm run verify-receipt -- receipt.json{"\n"}
+            <span className="text-verified">✓</span> sha256 of RFC 8785 canonical JSON matches{"\n"}
+            <span className="text-verified">✓</span> EIP-191 signer matches /.well-known/agent-card.json{"\n"}
+            <span className="text-verified">✓</span> Merkle inclusion in the root attested on Base{"\n"}
+            <span className="text-faint">  re-fetching Transfer logs from your RPC…</span>{"\n"}
+            <span className="text-verified">✓</span> rerun erc20_outflow_v1: same outcome, same value{"\n"}
+            {"\n"}
+            receipt verified
+          </pre>
         </div>
-        <Reveal className="lg:col-span-7">
-          <div className="proof !p-0 overflow-hidden">
-            <div className="flex items-center gap-2 px-4 h-10 border-b border-line">
-              <span className="w-2.5 h-2.5 rounded-full bg-line-strong" />
-              <span className="w-2.5 h-2.5 rounded-full bg-line-strong" />
-              <span className="w-2.5 h-2.5 rounded-full bg-line-strong" />
-              <span className="label ml-3">kept-verify</span>
-            </div>
-            <pre className="mono text-[13px] leading-7 p-6 overflow-x-auto">
-              <span className="text-faint">$ </span>npm run verify-receipt -- receipt.json{"\n"}
-              <span className="text-verified">✓</span> sha256 f4b77dd5…d0752fd{"\n"}
-              <span className="text-verified">✓</span> signer matches the address in /.well-known/agent-card.json{"\n"}
-              <span className="text-verified">✓</span> Merkle inclusion in anchored root{"\n"}
-              <span className="text-faint">  re-fetching Transfer logs from your RPC…</span>{"\n"}
-              <span className="text-verified">✓</span> rerun erc20_outflow_v1: same outcome, same value{"\n"}
-              {"\n"}
-              <span className="text-ink">receipt verified</span>
-            </pre>
-          </div>
-        </Reveal>
-      </div>
+        <div className="flex justify-center gap-3 mt-10">
+          <Link href="/docs#verify" className="h-11 px-5 inline-flex items-center rounded-xl bg-ink text-bg font-medium hover:bg-accent hover:text-white transition">Read the guide</Link>
+          <Link href="/try" className="h-11 px-5 inline-flex items-center rounded-xl border border-line-strong hover:border-ink transition">Try a project</Link>
+        </div>
+      </Reveal>
     </section>
   );
 }
