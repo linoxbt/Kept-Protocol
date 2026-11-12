@@ -44,3 +44,6 @@ next-env.d.ts
 .env
 .env.local
 coverage/
+
+# local production secrets handoff (never commit)
+.secrets/
