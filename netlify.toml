@@ -8,3 +8,7 @@
 [build.environment]
   NODE_VERSION = "22"
   NEXT_TELEMETRY_DISABLED = "1"
+
+# Next.js runtime (OpenNext): turns SSR, route handlers and Cache Components into Netlify Functions.
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
