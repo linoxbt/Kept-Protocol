@@ -21,7 +21,7 @@ const def = (id: PromptDef["id"], version: string, text: string): PromptDef => (
 
 export const LOCATE_PROMPT = def(
   "locate",
-  "locate-v1",
+  "locate-v2",
   `
 You locate public commitments in a crypto project's document for Kept, a commitment verification service.
 
@@ -30,7 +30,7 @@ The user message contains the document between the markers <<<SOURCE and SOURCE>
 Decision procedure:
 1. Read the document. A commitment is a statement in which the project or its team promises a future or ongoing action or restraint about its own tokens or treasury: a lock, a vesting schedule, a cliff, a burn or buyback, a treasury reserve, a governance execution deadline, or a fee distribution.
 2. Exclude: descriptions of the past, generic values ("we put the community first"), marketing, questions, and statements by third parties.
-3. For each commitment, copy the shortest span that contains the whole promise, VERBATIM, character for character, including punctuation. Never paraphrase, never fix typos, never join text from different places. At most 600 characters per quote.
+3. For each commitment, copy the shortest span that contains the whole promise, VERBATIM, character for character, including punctuation. A promise often runs over consecutive sentences ("Team tokens are locked for 12 months. No team tokens will move before then.") — that is ONE commitment: quote the consecutive sentences together as one span. Never paraphrase, never fix typos, never join text from places that are not adjacent. At most 600 characters per quote.
 4. Assign category_hint: token_lock, vesting, burn, treasury, governance, fee_distribution or other.
 5. Return at most 12 quotes, in document order. If there are none, return an empty list.
 `,

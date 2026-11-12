@@ -4,6 +4,7 @@
  * missing fact with a guess.
  */
 import { toBaseUnits } from "@/core/amounts";
+import { describeCondition } from "@/core/describe";
 import { CommitmentSpec, type AttributionLevel, type MethodId } from "@/core/types";
 import type { ExtractOut } from "@/serv/schemas";
 import { checksum } from "./validate";
@@ -136,5 +137,6 @@ export function buildSpec(input: ConfirmInput): { spec: CommitmentSpec | null; e
   });
   if (!parsed.success) return { spec: null, errors: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`) };
   if (parsed.data.window.start >= parsed.data.window.end) return { spec: null, errors: ["window start must be before window end"] };
-  return { spec: parsed.data, errors: [] };
+  // The displayed condition is written by code from the spec, never taken from the model.
+  return { spec: { ...parsed.data, condition_summary: describeCondition(parsed.data) }, errors: [] };
 }

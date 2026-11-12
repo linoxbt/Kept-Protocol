@@ -42,9 +42,11 @@ SERV is called only on the language side, at three call sites. It is never asked
 | 2 | Extract fields | `gpt-5.4-mini-serv-kronos` | **Kronos** (audits the reasoning prompt), **Shadow Agent** (`serv_shadow_agent` with a checkable hint), strict `json_schema` | Zod validation, then a grounding check: every number, date and address must appear in the excerpt or be listed in `derived`. EIP-55 checksums, look-alike (poisoning) detection, unit traps, third-party wallets. |
 | 3 | Classify verifiability ×2 | `gpt-6-luna-serv-multipath` | **Multipath** over a numbered policy matrix | Two runs must agree, and must match the same matrix implemented in code (`src/extraction/rules.ts`). Disagreement sends the draft to review. |
 
+The sentence the UI shows as *what exactly is checked* is written by code from the spec (`src/core/describe.ts`), never taken from the model: in live testing SERV's own summary inverted a lock's direction while its structured fields were right.
+
 Confidence is computed, never asked for: grounding passed, the two Multipath runs agree, and the code rules agree. Every call is metered (`serv_calls`: model, prompt version and SHA-256, tokens, latency, estimated cost), with a daily budget. The landing page shows SERV calls per commitment.
 
-Transport policy: 429 → exponential backoff honouring `Retry-After`; 5xx and Shadow Agent 502 → two retries, then review; 400 → no retry; 401 → halt; five consecutive failures open the circuit for five minutes. A refused, truncated or invalid response is a failure, never data.
+Transport policy: 429 → exponential backoff honouring `Retry-After`; 5xx and Shadow Agent 502 → two retries, then review; 60 s timeout (180 s for extraction, where an uncached Kronos audit plus Shadow Agent revisions took about 116 s in testing); 400 → no retry; 401 → halt; five consecutive failures open the circuit for five minutes. A refused, truncated or invalid response is a failure, never data.
 
 ---
 

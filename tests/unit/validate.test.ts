@@ -140,3 +140,17 @@ describe("unit and third-party traps", () => {
     expect(nearThirdParty("Team wallet 0x2222222222222222222222222222222222222222 is locked.", "0x2222222222222222222222222222222222222222", "team")).toBe(false);
   });
 });
+
+describe("condition sentence", () => {
+  it("is written by code from the spec, not by the model", () => {
+    const { spec } = buildSpec({
+      fields: draft({ condition_summary: "The team wallet must not transfer any tokens before 2026-03-01." }),
+      method_id: "erc20_outflow_v1",
+      chain_id: 8453,
+      token: { address: "0x1111111111111111111111111111111111111111", symbol: "XYZ", decimals: 18 },
+      excerpt,
+      attribution: {},
+    });
+    expect(spec?.condition_summary).toBe("No XYZ may leave 0x2222…2222 between 2026-03-01 and 2027-03-01.");
+  });
+});

@@ -98,6 +98,8 @@ export class OpenServClient implements ServClient {
     private readonly apiKey: string,
     private readonly baseUrl = "https://inference-api.openserv.ai/v1",
     private readonly timeoutMs = 60_000,
+    /** Kronos audits and Shadow Agent revisions make uncached extract calls slow (measured: ~116 s). */
+    private readonly extractTimeoutMs = 180_000,
   ) {}
 
   async complete(req: ServRequest): Promise<ServResponse> {
@@ -112,7 +114,7 @@ export class OpenServClient implements ServClient {
           method: "POST",
           headers: { authorization: `Bearer ${this.apiKey}`, "content-type": "application/json" },
           body: JSON.stringify(requestBody(req)),
-          signal: AbortSignal.timeout(this.timeoutMs),
+          signal: AbortSignal.timeout(req.callSite === "extract" ? this.extractTimeoutMs : this.timeoutMs),
         });
       } catch (e) {
         this.fail();
