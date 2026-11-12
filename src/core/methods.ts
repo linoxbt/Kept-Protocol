@@ -231,6 +231,13 @@ export const METHODS: Record<MethodId, (spec: CommitmentSpec, ev: Evidence) => M
   burn_v1: burnV1,
 };
 
+/** The addresses whose outbound transfers a method reads. */
+export function watchedAddresses(spec: CommitmentSpec): `0x${string}`[] {
+  if (spec.method_id === "burn_v1" && spec.burn) return [spec.burn.executor as `0x${string}`];
+  if (spec.method_id === "vesting_schedule_v1" && spec.vesting) return [spec.vesting.contract as `0x${string}`];
+  return spec.subjects.map((s) => s.address as `0x${string}`);
+}
+
 export function runMethod(spec: CommitmentSpec, ev: Evidence): MethodResult {
   const fn = METHODS[spec.method_id];
   if (!fn) throw new Error(`unregistered method: ${spec.method_id}`);

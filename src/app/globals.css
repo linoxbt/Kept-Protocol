@@ -1,26 +1,194 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  --color-bg: #0b0d0f;
+  --color-panel: #111418;
+  --color-panel-2: #161a1f;
+  --color-line: #232931;
+  --color-ink: #e6e8eb;
+  --color-muted: #8a94a3;
+  --color-faint: #5b6573;
+  --color-accent: #2dd4bf;
+  --color-verified: #22c55e;
+  --color-atrisk: #f59e0b;
+  --color-breached: #ef4444;
+  --color-unverifiable: #6b7280;
+  --color-disputed: #a78bfa;
+  --color-pending: #94a3b8;
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  font-feature-settings: "tnum" 1, "cv11" 1;
+  -webkit-font-smoothing: antialiased;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+a {
+  color: inherit;
+}
+
+a.link {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+a.link:hover {
+  text-decoration: underline;
+}
+
+/* "This is proof": every receipt and evidence block shares one corner-bracket border. */
+.proof {
+  position: relative;
+  padding: 1.25rem;
+  background: var(--color-panel);
+}
+.proof::before,
+.proof::after {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-color: var(--color-accent);
+  border-style: solid;
+  pointer-events: none;
+}
+.proof::before {
+  top: 0;
+  left: 0;
+  border-width: 1.5px 0 0 1.5px;
+}
+.proof::after {
+  bottom: 0;
+  right: 0;
+  border-width: 0 1.5px 1.5px 0;
+}
+
+.panel {
+  background: var(--color-panel);
+  border: 1px solid var(--color-line);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid var(--color-accent);
+  color: var(--color-accent);
+  padding: 0.45rem 0.9rem;
+  font-size: 0.85rem;
+  font-family: var(--font-mono);
+  background: transparent;
+  cursor: pointer;
+}
+.btn:hover {
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn-quiet {
+  border-color: var(--color-line);
+  color: var(--color-ink);
+}
+
+.input {
+  width: 100%;
+  background: var(--color-bg);
+  border: 1px solid var(--color-line);
+  color: var(--color-ink);
+  padding: 0.55rem 0.7rem;
+  font-size: 0.9rem;
+}
+.input:focus {
+  outline: 1px solid var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+table.data {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+table.data th {
+  text-align: left;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  border-bottom: 1px solid var(--color-line);
+  padding: 0.5rem 0.6rem;
+}
+table.data td {
+  border-bottom: 1px solid var(--color-line);
+  padding: 0.6rem;
+  vertical-align: top;
+}
+
+mark.hl {
+  background: color-mix(in srgb, var(--color-accent) 22%, transparent);
+  color: var(--color-ink);
+  padding: 0 1px;
+}
+ins.diff {
+  background: color-mix(in srgb, var(--color-verified) 25%, transparent);
+  text-decoration: none;
+}
+del.diff {
+  background: color-mix(in srgb, var(--color-breached) 25%, transparent);
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--color-panel) 0%, var(--color-panel-2) 50%, var(--color-panel) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite linear;
+}
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (max-width: 767px) {
+  table.data.stack thead {
+    display: none;
+  }
+  table.data.stack tr {
+    display: block;
+    border-bottom: 1px solid var(--color-line);
+    padding: 0.5rem 0;
+  }
+  table.data.stack td {
+    display: block;
+    border: 0;
+    padding: 0.15rem 0.4rem;
+  }
+  table.data.stack td.hide-sm {
+    display: none;
+  }
 }

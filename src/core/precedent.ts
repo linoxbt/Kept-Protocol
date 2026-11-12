@@ -101,6 +101,6 @@ export function retroactiveRevisionFlags(
       logIndex: t.logIndex,
       blockNumber: t.blockNumber.toString(),
       blockTime: t.blockTime,
-      message: `Condition relaxed after the event: this transfer on ${new Date(t.blockTime * 1000).toISOString().slice(0, 10)} falls outside the revised condition, which was published on ${new Date(laterPublishedAt * 1000).toISOString().slice(0, 10)}.`,
+      message: `Condition relaxed after the event: this transfer on ${new Date(t.blockTime * 1000).toISOString().slice(0, 10)} fails the earlier condition but not the revised one, which was published later, on ${new Date(laterPublishedAt * 1000).toISOString().slice(0, 10)}.`,
     }));
 }

@@ -151,6 +151,11 @@ describe("burn_v1", () => {
     expect(r.notes[0]).toMatch(/non-executor/);
   });
 
+  it("shows Pending, not Verified, while the target is unmet and the period is open", () => {
+    const r = burnV1(spec, evidence([], "2026-02-01"));
+    expect(deriveStatus(spec, r, "not_needed")).toMatchObject({ status: "pending", final: false });
+  });
+
   it("warns near the deadline and breaches when the period closes short", () => {
     const near = burnV1(spec, evidence([], "2026-03-28"));
     expect(near.warnings[0].code).toBe("DEADLINE_NEAR_TARGET_UNMET");

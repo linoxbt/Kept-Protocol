@@ -125,3 +125,18 @@ describe("capture safety", () => {
     expect(htmlToText("<html><script>alert(1)</script><p>Team tokens &amp; more</p><li>a</li></html>")).toBe("Team tokens & more\n\n- a");
   });
 });
+
+describe("unit and third-party traps", () => {
+  it("flags a percentage read as a token amount", async () => {
+    const { writtenAsPercent } = await import("@/extraction/validate");
+    expect(writtenAsPercent("We burn 50 bps of supply each quarter", "50")).toBe(true);
+    expect(writtenAsPercent("Up to 10% of team tokens", "10")).toBe(true);
+    expect(writtenAsPercent("10 million tokens, 10% of supply", "10")).toBe(false);
+  });
+  it("recognises third-party wallets", async () => {
+    const { nearThirdParty } = await import("@/extraction/validate");
+    const text = "Our market maker wallet 0x9999999999999999999999999999999999999999 provides liquidity.";
+    expect(nearThirdParty(text, "0x9999999999999999999999999999999999999999", null)).toBe(true);
+    expect(nearThirdParty("Team wallet 0x2222222222222222222222222222222222222222 is locked.", "0x2222222222222222222222222222222222222222", "team")).toBe(false);
+  });
+});

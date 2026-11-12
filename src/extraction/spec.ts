@@ -62,7 +62,7 @@ export function buildSpec(input: ConfirmInput): { spec: CommitmentSpec | null; e
   }
   if (subjects.length === 0) errors.push("at least one subject address is required");
 
-  let start = f.window_start;
+  const start = f.window_start;
   let end = f.window_end;
   if (!start) errors.push("a start date is required (the source gives none; it cannot be guessed)");
   if (start && !end && f.duration_months) {

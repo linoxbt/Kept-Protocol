@@ -201,6 +201,16 @@ export function checkGrounding(draft: ExtractOut, excerpt: string, context: stri
   }
 
   if (draft.amount_unit === "percent_of_supply" || draft.amount_unit === "percent_of_allocation") flags.add("UNIT_PERCENT");
+  if (draft.amount && draft.amount_unit === "tokens" && writtenAsPercent(src, draft.amount)) {
+    flags.add("UNIT_MISMATCH");
+    problems.push(`amount ${draft.amount} is written as a percentage or basis points in the source, not a token count`);
+  }
+  for (const s of draft.subjects) {
+    if (s.address && isAddress(s.address, { strict: false }) && nearThirdParty(src, s.address, s.label)) {
+      flags.add("THIRD_PARTY_ADDRESS");
+      problems.push(`${s.address} is described as a third party (partner, exchange, market maker or advisor), not the team`);
+    }
+  }
   if (draft.amount_unit === "usd") flags.add("UNIT_USD");
   if (draft.category === "burn" && draft.comparator === "lte") {
     flags.add("COMPARATOR_MISMATCH");
@@ -211,6 +221,31 @@ export function checkGrounding(draft: ExtractOut, excerpt: string, context: stri
     problems.push("a lock limits outflows, so it needs an upper bound (lte)");
   }
   return { flags: [...flags], problems };
+}
+
+const PERCENT_AFTER = /^\s*(%|percent\b|per cent\b|bps\b|basis points\b)/i;
+
+/** True if every written occurrence of `amount` in the text is followed by %, percent or bps. */
+export function writtenAsPercent(text: string, amount: string): boolean {
+  const re = new RegExp(`(?<![\\d.,])${amount.replace(/[.]/g, "\\.")}(?![\\d])`, "g");
+  let seen = 0;
+  let pct = 0;
+  for (const m of text.matchAll(re)) {
+    seen++;
+    if (PERCENT_AFTER.test(text.slice((m.index ?? 0) + m[0].length, (m.index ?? 0) + m[0].length + 16))) pct++;
+  }
+  return seen > 0 && pct === seen;
+}
+
+export const THIRD_PARTY = /\b(partner|market[- ]?maker|exchange|cex|third[- ]party|advisor|adviser|investor|vc|custodian|liquidity provider)s?\b/i;
+
+/** The words right around an address (or its label) describe someone other than the team. */
+export function nearThirdParty(text: string, address: string, label: string | null): boolean {
+  if (label && THIRD_PARTY.test(label)) return true;
+  const lower = text.toLowerCase();
+  const at = lower.indexOf(address.toLowerCase());
+  if (at < 0) return false;
+  return THIRD_PARTY.test(text.slice(Math.max(0, at - 60), at + address.length + 30));
 }
 
 /** EIP-55 checksum, or null if invalid. */

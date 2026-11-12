@@ -6,7 +6,17 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint src scripts tests",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "vitest run",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "worker": "tsx scripts/worker.ts",
+    "grifter": "tsx scripts/grifter.ts",
+    "anchor": "tsx scripts/anchor.ts",
+    "demo": "tsx scripts/demo.ts",
+    "verify-receipt": "tsx scripts/kept-verify.ts"
   },
   "dependencies": {
     "@x402/core": "^2.30.0",
@@ -31,9 +41,13 @@
     "@vitest/coverage-v8": "^5.1.0",
     "eslint": "^9",
     "eslint-config-next": "16.4.6",
+    "solc": "^0.8.28",
     "tailwindcss": "4.3.3",
     "tsx": "^4.23.15",
     "typescript": "^5",
     "vitest": "^5.1.0"
+  },
+  "engines": {
+    "node": ">=20.11"
   }
 }

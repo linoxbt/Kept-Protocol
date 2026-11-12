@@ -89,35 +89,48 @@ export class EvmAdapter implements ChainAdapter {
     return t;
   }
 
-  /** Highest block with timestamp <= ts. Interpolation search, then binary search. */
+  /**
+   * Highest block with timestamp <= ts. Estimates from the recent block time, then brackets
+   * outwards from the guess (block times have changed over Base's history) and binary-searches
+   * inside the bracket. Touches only blocks near the answer, so it works on non-archive RPCs for
+   * recent dates.
+   */
   async blockAtOrBefore(timestamp: number): Promise<bigint> {
     const latest = await this.latestBlock();
     if (timestamp >= latest.timestamp) return latest.number;
-    let lo = 0n;
-    let hi = latest.number;
-    let loT = await this.blockTime(0n);
-    let hiT = latest.timestamp;
-    if (timestamp < loT) return 0n;
-    for (let i = 0; i < 64 && hi - lo > 1n; i++) {
-      let mid: bigint;
-      if (i < 6 && hiT > loT) {
-        const frac = (timestamp - loT) / (hiT - loT);
-        mid = lo + BigInt(Math.floor(Number(hi - lo) * frac));
-        if (mid <= lo) mid = lo + 1n;
-        if (mid >= hi) mid = hi - 1n;
-      } else {
-        mid = (lo + hi) / 2n;
-      }
-      const t = await this.blockTime(mid);
-      if (t <= timestamp) {
-        lo = mid;
-        loT = t;
-      } else {
-        hi = mid;
-        hiT = t;
-      }
+    const span = latest.number > 1000n ? 1000n : latest.number;
+    const refT = await this.blockTime(latest.number - span);
+    const perBlock = Math.max(0.05, (latest.timestamp - refT) / Number(span || 1n));
+    const clamp = (n: bigint) => (n < 0n ? 0n : n > latest.number ? latest.number : n);
+    let guess = clamp(latest.number - BigInt(Math.ceil((latest.timestamp - timestamp) / perBlock)));
+    let step = BigInt(Math.max(64, Math.ceil(600 / perBlock)));
+    let lo = guess;
+    let loT = await this.blockTime(lo);
+    for (let i = 0; i < 40 && loT > timestamp && lo > 0n; i++) {
+      lo = clamp(lo - step);
+      loT = await this.blockTime(lo);
+      step *= 2n;
     }
-    return lo;
+    let hi = lo === guess ? clamp(guess + step) : guess;
+    let hiT = await this.blockTime(hi);
+    step = BigInt(Math.max(64, Math.ceil(600 / perBlock)));
+    for (let i = 0; i < 40 && hiT <= timestamp && hi < latest.number; i++) {
+      lo = hi;
+      loT = hiT;
+      hi = clamp(hi + step);
+      hiT = await this.blockTime(hi);
+      step *= 2n;
+    }
+    if (loT > timestamp) return 0n;
+    if (hiT <= timestamp) return hi;
+    while (hi - lo > 1n) {
+      const mid = (lo + hi) / 2n;
+      const t = await this.blockTime(mid);
+      if (t <= timestamp) lo = mid;
+      else hi = mid;
+    }
+    guess = lo;
+    return guess;
   }
 
   private async rawLogs(params: object): Promise<RawLog[]> {

@@ -122,7 +122,7 @@ export async function runCheck(commitmentId: string, opts: { sql?: Sql; trigger?
   const sql = opts.sql ?? db();
   const bundle = await loadCommitment(commitmentId, sql);
   if (!bundle) throw new Error(`commitment ${commitmentId} not found`);
-  const { commitment, version, snapshot, source } = bundle;
+  const { version, snapshot, source } = bundle;
   const spec = version.spec;
   const checkId = newId("kk");
   let evaluation: Evaluation;

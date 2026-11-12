@@ -10,7 +10,7 @@ import { db, type Sql } from "@/db/client";
 import { runExtraction, type Draft, type ExtractionResult, type ProjectContext } from "@/extraction/pipeline";
 import { classifyByRules } from "@/extraction/rules";
 import { buildSpec } from "@/extraction/spec";
-import { addressesInText, checkGrounding, checksum } from "@/extraction/validate";
+import { addressesInText, checkGrounding, checksum, nearThirdParty } from "@/extraction/validate";
 import { newId } from "@/lib/ids";
 import { ExtractOut } from "@/serv/schemas";
 import { ServError } from "@/serv/client";
@@ -148,7 +148,7 @@ export async function decideAttribution(
       out[a] = { level: "onchain_proven", evidence: `beneficiary() of vesting contract ${ctx.vestingContract}`, confirmed_by: null };
     } else if (owner && owner.toLowerCase() === a) {
       out[a] = { level: "onchain_proven", evidence: `owner() of token ${ctx.token}`, confirmed_by: null };
-    } else if (ctx.sourceIsProjects && inSource.has(a)) {
+    } else if (ctx.sourceIsProjects && inSource.has(a) && !nearThirdParty(ctx.snapshot.text, a, null)) {
       out[a] = {
         level: "declared_by_project",
         evidence: `listed in ${ctx.sourceUrl ?? "the project's source"} captured ${ctx.snapshot.captured_at.toISOString().slice(0, 10)} (sha256 ${ctx.snapshot.content_sha256.slice(0, 12)}…)`,

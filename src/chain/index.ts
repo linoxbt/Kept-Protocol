@@ -38,10 +38,4 @@ export function getChain(chainId: number): ChainProviders {
   return providers;
 }
 
-export function explorerTx(chainId: number, tx: string): string {
-  return `${SUPPORTED_CHAINS[chainId]?.explorer ?? "https://basescan.org"}/tx/${tx}`;
-}
-
-export function explorerAddress(chainId: number, address: string): string {
-  return `${SUPPORTED_CHAINS[chainId]?.explorer ?? "https://basescan.org"}/address/${address}`;
-}
+export { explorerAddress, explorerTx } from "./explorer";

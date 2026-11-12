@@ -11,11 +11,8 @@ import { db, type Sql } from "@/db/client";
 
 export const MAX_SCAN_BLOCKS_PER_CHECK = BigInt(process.env.KEPT_MAX_SCAN_BLOCKS ?? 3_000_000);
 
-export function watchedAddresses(spec: CommitmentSpec): `0x${string}`[] {
-  if (spec.method_id === "burn_v1" && spec.burn) return [spec.burn.executor as `0x${string}`];
-  if (spec.method_id === "vesting_schedule_v1" && spec.vesting) return [spec.vesting.contract as `0x${string}`];
-  return spec.subjects.map((s) => s.address as `0x${string}`);
-}
+export { watchedAddresses } from "@/core/methods";
+import { watchedAddresses } from "@/core/methods";
 
 export interface CollectedEvidence {
   evidence: Evidence;

@@ -65,6 +65,12 @@ export function deriveStatus(
       if (result.warnings.length > 0) {
         return { status: "at_risk", final: false, reason: result.warnings.map((w) => w.detail).join("; ") };
       }
+      if (result.outcome === "in_progress" && spec.method_id === "burn_v1") {
+        // A target not yet met is not "verified to date": nothing has been delivered yet.
+        const burned = `${formatUnits(BigInt(result.computed_value), d)} ${sym}`;
+        const target = `${formatUnits(BigInt(result.threshold_base_units), d)} ${sym}`;
+        return { status: "pending", final: false, reason: `${burned} of ${target} burned so far; the period ends ${spec.window.end.slice(0, 10)}` };
+      }
       const value = `${formatUnits(BigInt(result.computed_value), d)} ${sym}`;
       const limit = `${formatUnits(BigInt(result.threshold_base_units), d)} ${sym}`;
       const final = result.outcome === "satisfied" && result.window_closed;
