@@ -4,7 +4,11 @@
  * Several workers can run at once; checks are claimed with SKIP LOCKED.
  */
 import { closeDb } from "../src/db/client";
+import { assertProductionEnv } from "../src/lib/env";
 import { tick } from "../src/services/monitor";
+
+// Refuse to sign receipts with the public development key in production.
+assertProductionEnv();
 
 const every = Number(process.env.KEPT_TICK_SECONDS ?? 60) * 1000;
 let stopping = false;
