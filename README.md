@@ -157,7 +157,7 @@ OpenAPI 3.1 at `/api/v1/openapi.json`; human docs at `/docs`. Public reads carry
 ## Limitations, stated plainly
 
 - The agent card is an ERC-8004-style registration file; Kept is not yet registered in an on-chain ERC-8004 identity registry.
-- x402 payments default to Base Sepolia through the public x402.org facilitator. Real revenue needs `X402_NETWORK=eip155:8453` and a mainnet facilitator.
+- x402 payments settle in USDC on Base mainnet through PayAI's public facilitator; the facilitator is a third party that relays each signed payment on-chain. Without configuration the code defaults to Base Sepolia (x402.org) for testing.
 - Base only in this release; methods read ERC-20 `Transfer` logs. Treasury, governance and fee-distribution commitments are classified and recorded but not yet monitored.
 - Windows that start months back need an archive-capable RPC. Free public endpoints serve recent blocks only, and Kept says so in the check error instead of guessing.
 - A database is not immutable, and Kept never claims it is. Integrity comes from the hash chain, the signatures and the on-chain anchors, which third parties can check.
