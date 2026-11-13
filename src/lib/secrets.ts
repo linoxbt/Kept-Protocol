@@ -26,6 +26,9 @@ const GENERATED: Record<string, () => string> = {
 
 const ENC_PREFIX = "enc:v1:";
 
+/** Rows in kept_secrets that hold plain state, not secrets: never encrypted (and repaired if they were). */
+const PLAIN_STATE = new Set(["ADMIN_PASSWORD_HASH", "SESSION_EPOCH", "DEMO_STATE"]);
+
 function kek(): Buffer | null {
   const k = process.env.KEPT_SECRETS_KEK;
   if (!k) return null;
@@ -64,6 +67,11 @@ export function openValue(stored: string): string {
 
 let loaded = false;
 
+/** Tests only: lets bootstrapSecrets run again in the same process. */
+export function resetBootstrapForTests(): void {
+  loaded = false;
+}
+
 /** Loads (and if needed creates) bootstrapped secrets into process.env. Idempotent and race-safe. */
 export async function bootstrapSecrets(): Promise<void> {
   if (loaded) return;
@@ -76,10 +84,17 @@ export async function bootstrapSecrets(): Promise<void> {
     for (const name of missing) {
       await sql`insert into kept_secrets (name, value) values (${name}, ${sealValue(GENERATED[name]())}) on conflict (name) do nothing`;
     }
-    const rows = await sql<{ name: string; value: string }[]>`select name, value from kept_secrets where name <> 'ADMIN_PASSWORD_HASH'`;
+    const rows = await sql<{ name: string; value: string }[]>`select name, value from kept_secrets`;
     for (const r of rows) {
-      // Re-encrypt rows stored in plaintext before a KEK was configured.
-      if (kek() && !r.value.startsWith(ENC_PREFIX)) {
+      if (PLAIN_STATE.has(r.name)) {
+        // Plain state must stay readable; undo an earlier release that encrypted it by mistake.
+        if (r.value.startsWith(ENC_PREFIX) && kek()) {
+          await sql`update kept_secrets set value = ${openValue(r.value)} where name = ${r.name} and value = ${r.value}`;
+        }
+        continue;
+      }
+      // Re-encrypt generated secrets stored in plaintext before a KEK was configured.
+      if (r.name in GENERATED && kek() && !r.value.startsWith(ENC_PREFIX)) {
         await sql`update kept_secrets set value = ${sealValue(r.value)} where name = ${r.name} and value = ${r.value}`;
       }
       if (missing.includes(r.name)) process.env[r.name] = openValue(r.value);

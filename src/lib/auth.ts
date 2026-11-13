@@ -14,7 +14,7 @@ import { db } from "@/db/client";
 import { hit, peek } from "@/services/ratelimit";
 import { env } from "./env";
 import { clientIp, Problem } from "./http";
-import { verifyPassword } from "./secrets";
+import { openValue, verifyPassword } from "./secrets";
 
 export const SESSION_COOKIE = "kept_session";
 const SESSION_TTL_S = 12 * 3600;
@@ -96,7 +96,7 @@ async function sessionEpoch(): Promise<number> {
   let value = 0;
   try {
     const [r] = await db()<{ value: string }[]>`select value from kept_secrets where name = 'SESSION_EPOCH'`;
-    value = Number(r?.value ?? 0) || 0;
+    value = Number(r ? openValue(r.value) : 0) || 0;
   } catch {
     value = 0;
   }
@@ -106,8 +106,10 @@ async function sessionEpoch(): Promise<number> {
 
 /** Revokes every outstanding admin session. */
 export async function revokeSessions(): Promise<void> {
-  await db()`insert into kept_secrets (name, value) values ('SESSION_EPOCH', '1')
-             on conflict (name) do update set value = (kept_secrets.value::bigint + 1)::text`;
+  epochCache = null;
+  const next = String((await sessionEpoch()) + 1);
+  await db()`insert into kept_secrets (name, value) values ('SESSION_EPOCH', ${next})
+             on conflict (name) do update set value = excluded.value`;
   epochCache = null;
 }
 

@@ -71,7 +71,7 @@ Community. We will always put the community first.`;
 
 async function readState(sql: Sql): Promise<DemoState | null> {
   const [r] = await sql<{ value: string }[]>`select value from kept_secrets where name = 'DEMO_STATE'`;
-  return r ? (JSON.parse(r.value) as DemoState) : null;
+  return r ? (JSON.parse(openValue(r.value)) as DemoState) : null;
 }
 
 async function writeState(sql: Sql, s: DemoState): Promise<void> {

@@ -30,6 +30,7 @@ import { json, route } from "@/lib/http";
 import { decideDispute, listDisputes, openDispute } from "@/services/disputes";
 import { getJob, startJob } from "@/services/jobs";
 import { confirmViolation } from "@/services/verify";
+import { bootstrapSecrets, resetBootstrapForTests, sealValue } from "@/lib/secrets";
 
 const URL = process.env.DATABASE_URL_TEST ?? "postgres://kept@127.0.0.1:5433/kept_test";
 const TOKEN = "0x1111111111111111111111111111111111111111" as const;
@@ -336,5 +337,26 @@ describe.skipIf(!DB_UP)("Kept lifecycle", () => {
     const stranger = await (await h(post(), {})).json();
     expect(stranger).not.toEqual(a);
     expect(calls).toBe(2);
+  });
+
+  it("encrypts only generated secrets and repairs plain state that was encrypted", async () => {
+    const saved = { ...process.env };
+    try {
+      process.env.KEPT_SECRETS_KEK = "33".repeat(32);
+      await sql`delete from kept_secrets where name in ('DEMO_STATE', 'CRON_SECRET', 'SESSION_EPOCH')`;
+      await sql`insert into kept_secrets (name, value) values ('DEMO_STATE', ${sealValue('{"stage":"seeded"}')}), ('SESSION_EPOCH', '4'), ('CRON_SECRET', 'plain-cron-secret-0000000000')`;
+      delete process.env.CRON_SECRET;
+      resetBootstrapForTests();
+      await bootstrapSecrets();
+      const rows = Object.fromEntries((await sql<{ name: string; value: string }[]>`select name, value from kept_secrets where name in ('DEMO_STATE', 'SESSION_EPOCH', 'CRON_SECRET')`).map((r) => [r.name, r.value]));
+      expect(rows.DEMO_STATE).toBe('{"stage":"seeded"}');
+      expect(rows.SESSION_EPOCH).toBe("4");
+      expect(rows.CRON_SECRET.startsWith("enc:v1:")).toBe(true);
+      expect(process.env.CRON_SECRET).toBe("plain-cron-secret-0000000000");
+    } finally {
+      for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];
+      Object.assign(process.env, saved);
+      resetBootstrapForTests();
+    }
   });
 });
