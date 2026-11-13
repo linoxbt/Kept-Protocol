@@ -9,6 +9,7 @@ import { adminSetupOpen } from "@/lib/auth";
 import { getSigner, isDevSigner } from "@/receipts/signer";
 import { anchorStatus } from "@/services/anchor";
 import { openDisputeQueue } from "@/services/disputes";
+import { demoStatus } from "@/services/demo";
 import { servAvailable, servStats, spentTodayUsd } from "@/services/serv";
 import { DemoPageForm, ManualDraftForm, NewProjectForm, NewSourceForm, PostButton, WebhookForm } from "@/components/admin-forms";
 import { DisputeDecision } from "@/components/admin-actions";
@@ -28,7 +29,7 @@ async function Admin() {
   await connection();
   if (!(await isAdminSession())) redirect((await adminSetupOpen()) ? "/admin/setup" : "/admin/login");
   const sql = db();
-  const [projects, sources, extractions, pages, stats, spent, anchor, disputes, snapshots, commitments] = await Promise.all([
+  const [projects, sources, extractions, pages, stats, spent, anchor, disputes, snapshots, commitments, demo] = await Promise.all([
     sql<{ id: string; name: string; slug: string }[]>`select id, name, slug from projects order by created_at desc`,
     sql<{ id: string; url: string | null; kind: string; project: string; last_checked_at: Date | null; status: string }[]>`
       select s.id, s.url, s.kind, p.name as project, s.last_checked_at, s.status from sources s join projects p on p.id = s.project_id order by s.created_at desc limit 30`,
@@ -46,6 +47,7 @@ async function Admin() {
       order by s.id, n.captured_at desc limit 50`,
     sql<{ id: string; label: string }[]>`
       select c.id, p.name || ' · ' || c.id as label from commitments c join projects p on p.id = c.project_id order by c.created_at desc limit 100`,
+    demoStatus(),
   ]);
   const signer = getSigner().address;
   return (
@@ -63,6 +65,7 @@ async function Admin() {
           {anchor?.operator ? <p className="mono text-[10px] break-all text-muted">operator {anchor.operator}</p> : <p className="text-xs text-atrisk">no operator key</p>}
           <p className={`text-xs ${anchor?.funded ? "text-verified" : "text-atrisk"}`}>{anchor?.funded ? "funded: anchors automatically every 6 h" : "fund the operator with a little ETH to start anchoring"}</p>
           {anchor?.last_anchor ? <p className="mono text-[10px] text-muted">last {ago(new Date(anchor.last_anchor.anchored_at))} · {anchor.last_anchor.receipt_count} receipts</p> : null}
+          <p className="text-xs text-muted mt-2">Live demo: <span className="mono">{demo?.stage ?? (anchor?.funded ? "starting" : "waits for funding")}</span>{demo?.commitment_id ? <> · <Link className="link mono" href={`/commitments/${demo.commitment_id}`}>record</Link></> : null}</p>
         </div>
         <div className="bg-panel p-4"><p className="label">Grifter</p><PostButton endpoint="/api/v1/grifter/runs" label="Run suite (offline)" />{servAvailable() ? <PostButton endpoint="/api/v1/grifter/runs?live=1" label="Run against SERV" /> : null}</div>
       </div>

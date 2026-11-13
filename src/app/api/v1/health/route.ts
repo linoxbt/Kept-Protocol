@@ -5,6 +5,7 @@ import { getSigner, isDevSigner } from "@/receipts/signer";
 import { codeCommit } from "@/lib/env";
 import { secretsEncrypted } from "@/lib/secrets";
 import { anchorStatus } from "@/services/anchor";
+import { demoStatus } from "@/services/demo";
 
 export async function GET(req: Request) {
   let database = "ok";
@@ -14,7 +15,7 @@ export async function GET(req: Request) {
     database = "unavailable";
   }
   const signer = getSigner().address;
-  const anchoring = database === "ok" ? await anchorStatus().catch(() => null) : null;
+  const [anchoring, demo] = database === "ok" ? await Promise.all([anchorStatus().catch(() => null), demoStatus()]) : [null, null];
   return json(
     {
       status: database === "ok" ? "ok" : "degraded",
@@ -24,6 +25,7 @@ export async function GET(req: Request) {
       dev_signer: isDevSigner(signer),
       secrets_encrypted_at_rest: secretsEncrypted(),
       anchoring,
+      live_demo: demo ? { stage: demo.stage, chain_id: demo.chain_id, token: demo.token, commitment_id: demo.commitment_id ?? null } : { stage: "not started" },
       client_ip_source: clientIpInfo(req).source,
       commit: codeCommit(),
     },

@@ -1,4 +1,4 @@
-# Long-running monitor (Railway, Fly, any container host). The web app runs on Vercel.
+# Long-running monitor (Railway, Fly, any container host). The web app runs next start separately.
 FROM node:22-slim
 WORKDIR /app
 COPY package.json package-lock.json ./

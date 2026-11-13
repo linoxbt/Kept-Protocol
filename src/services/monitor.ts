@@ -6,6 +6,7 @@
 import { db, type Sql } from "@/db/client";
 import type { CommitmentSpec } from "@/core/types";
 import { autoAnchor } from "./anchor";
+import { advanceDemo } from "./demo";
 import { failStaleJobs } from "./jobs";
 import { recaptureSource, type WatchResult } from "./precedent";
 import { purgeExpiredPreviews } from "./preview";
@@ -19,6 +20,7 @@ export interface TickReport {
   outbox: { queued: number; delivered: number; failed: number };
   purged: number;
   anchor: { anchored: number; skipped?: string; tx?: string };
+  demo: { stage: string; detail?: string };
   ms: number;
 }
 
@@ -61,7 +63,7 @@ export async function raiseDeadlineAlerts(sql: Sql = db()): Promise<number> {
 export async function tick(opts: { maxChecks?: number; maxSources?: number; deadlineMs?: number } = {}, sql: Sql = db()): Promise<TickReport> {
   const started = Date.now();
   const budget = opts.deadlineMs ?? 50_000;
-  const report: TickReport = { checks: [], sources: [], deadlines: 0, outbox: { queued: 0, delivered: 0, failed: 0 }, purged: 0, anchor: { anchored: 0 }, ms: 0 };
+  const report: TickReport = { checks: [], sources: [], deadlines: 0, outbox: { queued: 0, delivered: 0, failed: 0 }, purged: 0, anchor: { anchored: 0 }, demo: { stage: "none" }, ms: 0 };
   const ids = await claimDue(opts.maxChecks ?? 10, sql);
   for (const id of ids) {
     if (Date.now() - started > budget) {
@@ -87,6 +89,7 @@ export async function tick(opts: { maxChecks?: number; maxSources?: number; dead
   report.purged = await purgeExpiredPreviews(sql);
   await failStaleJobs(sql);
   report.anchor = await autoAnchor(sql);
+  report.demo = await advanceDemo(sql);
   report.ms = Date.now() - started;
   return report;
 }
