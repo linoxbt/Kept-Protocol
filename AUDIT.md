@@ -1,0 +1,47 @@
+# Audit status
+
+Status of every finding from the staff-engineer audit of 12 November 2026. **Fixed** means the
+code is changed, covered by tests where testable, and deployed through the Railway auto-deploy.
+**Needs owner** means the fix requires an account action or money that only the project owner can
+provide; the code side is done.
+
+| ID | Severity | Finding | Status | How |
+|---|---|---|---|---|
+| S0 | Critical | SERV API key pasted in chat | **Needs owner** | Rotate at console.openserv.ai and set the new `SERV_API_KEY` on Railway (web + worker). |
+| S1 | High | Rate limits trusted the client-written X-Forwarded-For entry | Fixed | `clientIpInfo` (`src/lib/http.ts`) uses Netlify's client IP proven by the `x-kept-edge` token, else Railway's `x-real-ip`, else the right-most hop. Until the edge token is deployed (see N1), Netlify's header is accepted unproven. Tests: `tests/unit/security.test.ts`. |
+| S2 | High | Bearer admin auth unlimited, scrypt per request | Fixed | `verifyCredential` (`src/lib/auth.ts`): 10 failures/15 min per IP and 60 globally, checked before scrypt; uniform delay on failure. Test in `lifecycle.test.ts`. |
+| S3 | High | Signing key plaintext in DB + public Postgres TCP proxy | Partly fixed, **needs owner** | Code: optional AES-256-GCM sealing of all stored secrets with `KEPT_SECRETS_KEK`; existing rows re-encrypt on start. Owner: delete the Postgres TCP proxy in Railway and set `KEPT_SECRETS_KEK` (64 hex) as a sealed shared variable on web + worker. |
+| S4 | Medium-High | Idempotency replay before auth, not scoped | Fixed | Keys are scoped to a hash of the caller's credential. Test in `lifecycle.test.ts`. |
+| S5 | Medium | No security headers | Fixed | CSP (pages), `X-Frame-Options: DENY`, nosniff, Referrer-Policy, Permissions-Policy, COOP; `x-powered-by` removed. Verified live. |
+| S6 | Medium | Webhook delivery open to DNS rebinding | Fixed | Delivered through the same pinned-lookup dispatcher as source capture. |
+| S7 | Low | Admin setup first-come-first-served | Fixed | Setup needs a one-time token printed in the server log. |
+| S8 | Low | Sessions not revocable | Fixed | Sessions carry an epoch; sign-out revokes all. Test in `lifecycle.test.ts`. |
+| S9 | Low | Webhook and session secrets plaintext | Fixed (with S3 owner step) | Webhook secrets sealed with the same KEK as other secrets. |
+| S10 | Low | Admin link in public footer | Fixed | Replaced with a public Status link. |
+| B1 | High | Burn shortfall could never become Breached | Fixed | Resumable full recount on the second provider (`confirm_recounts`), a few million blocks per check. Test in `lifecycle.test.ts`. |
+| B2 | Medium | Long synchronous routes behind the proxy timeout | Fixed | Verify, confirm, versions, Hindcast, preview checks and Grifter runs return 202 + a job (`/api/v1/jobs/{id}`); the UI polls. Test in `lifecycle.test.ts`. |
+| B3 | Medium | x402 payments recorded before settlement | Fixed | Recorded from the facilitator's settlement header only (payer, network, transaction). |
+| B4 | Medium | Webhooks could be delivered twice | Fixed | Deliveries claimed with `FOR UPDATE SKIP LOCKED` and a lease. |
+| B5 | Low | Integration suite failed without a DB | Fixed | Skips when Postgres is unreachable. |
+| B6 | Low | `paid()` cache ignored env changes | Fixed | Cache keyed by pay-to, network, price and facilitator. |
+| B7 | Low | Docs page read env at build time | Fixed | Payment example renders per request. |
+| B8 | Low | Agent rate limit used raw XFF | Fixed | Uses `clientIp`. |
+| B9 | **Critical (found during fixing)** | Agent card was prerendered at build time and published the public development signer | Fixed | Route runs per request; the live e2e test checks the card matches `/api/v1/health`. |
+| M1 | Critical | Production had no data | Code done, **needs owner** | The worker now runs the full live demo (deploy KDEMO, seed, breach, rewrite → retroactive flag) with the deployment's own operator key as soon as that address holds a little ETH on Base (see `/api/v1/health` → `anchoring.operator`). |
+| M2 | High | Anchoring never ran | Code done, **needs owner** | The worker registers the EAS schema and anchors every 6 h automatically once the same operator address is funded. |
+| M3 | High | x402 endpoint answered 503 | **Needs owner** | Set `X402_PAY_TO` (your wallet address) on Railway web. For real revenue also `X402_NETWORK=eip155:8453` and a mainnet facilitator. |
+| M4 | High | Default RPCs have no archive access | **Needs owner** | Set `BASE_RPC_URL` and `BASE_RPC_URL_CONFIRM` to two different archive-capable providers (keys needed). |
+| M5 | Medium | Disputed / Expired / Awaiting evidence never set | Fixed | Disputes implemented end to end (public form, admin queue, status overlay, webhooks); Awaiting evidence during backfill and recount; Expired removed (it had no meaning distinct from Verified, final). |
+| M6 | Medium | Treasury / governance / fee not monitored | Fixed (stated) | Docs and README state they are recorded but not monitored in this release. |
+| M7 | Medium | No manual-draft UI | Fixed | Admin console form, grounded against the snapshot like model drafts. |
+| M8 | Medium | ERC-8004 not registered on-chain | Fixed (stated) | Called "ERC-8004-style" everywhere; README states it is not registered. |
+| M9 | Medium | CI never observed | Fixed | GitHub Actions `ci` green on every push (lint, typecheck, tests with Postgres, Grifter, build). |
+| M10 | Low | Stale README, vercel.json, monitor.yml | Fixed | README and `.env.example` rewritten for Railway + Netlify; unused files removed. |
+| M11 | Low | kept-web references missing worker variables | **Needs owner** | Remove the empty references in Railway (they resolve to empty and are ignored). |
+| P1 | Medium | Slow first verdict on old commitments | Partly fixed | Backfill progress shown as Awaiting evidence with a percentage; scan budget configurable (`KEPT_MAX_SCAN_BLOCKS`). A paid indexer (M4) is the real fix. |
+| P2 | Medium | Grifter suite ran on every view | Fixed | Cached per build (`"use cache"`). |
+| P3 | Low | Version diff per render | Fixed | Cached per (commitment, latest version). |
+| P4 | Low | Deadline alerts scanned all commitments | Fixed | Filtered in SQL. |
+| P5 | Low | Hero canvas always animating | Fixed | ~30 fps, stops off-screen and in hidden tabs, static under reduced motion. |
+| P6 | Low | Two hops (Netlify → Railway) | Accepted | Kept as the public domain; static assets are immutable-cached by browsers. |
+| N1 | — | Netlify edge token not yet deployed | **Pending platform access** | `scripts/netlify-edge-config.mjs` writes the deploy config with the header; deploy it, then set `KEPT_EDGE_STRICT=1`. |
