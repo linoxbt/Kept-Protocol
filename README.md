@@ -106,7 +106,7 @@ Secrets bootstrap themselves: on first start with a database, Kept generates its
 
 | Script | Does |
 |---|---|
-| `npm test` | 63 unit and integration tests. Integration tests need Postgres at `DATABASE_URL_TEST` and are skipped when none is reachable. `KEPT_E2E_URL=… npx vitest run tests/e2e` runs read-only HTTP checks against a deployment. |
+| `npm test` | 67 unit and integration tests. Integration tests need Postgres at `DATABASE_URL_TEST` and are skipped when none is reachable. `KEPT_E2E_URL=… npx vitest run tests/e2e` runs read-only HTTP checks against a deployment. |
 | `npm run grifter` | Runs the adversarial suite offline. `-- --live` sends every source to SERV; `--save` stores the run. |
 | `npm run worker` | Long-running monitor: due checks, source watching, deadline alerts, webhooks, and automatic EAS anchoring once the operator key is funded. |
 | `npm run anchor` | Attests the pending Merkle root on Base through EAS by hand. `-- --register-schema` runs once. |
