@@ -1,6 +1,7 @@
 import { env } from "@/lib/env";
 import type { ChainAdapter } from "./adapter";
 import { EvmAdapter } from "./evm";
+import { ArchiveFallbackAdapter } from "./fallback";
 
 export const SUPPORTED_CHAINS: Record<number, { name: string; explorer: string }> = {
   8453: { name: "Base", explorer: "https://basescan.org" },
@@ -30,8 +31,12 @@ export function getChain(chainId: number): ChainProviders {
   else if (chainId === 84532) urls = [e.BASE_SEPOLIA_RPC_URL, e.BASE_SEPOLIA_RPC_URL_CONFIRM];
   else throw new Error(`unsupported chain ${chainId}`);
   const name = SUPPORTED_CHAINS[chainId].name;
+  const primaryRpc: ChainAdapter = new EvmAdapter({ chainId, name: `${name} primary (${new URL(urls[0]).host})`, rpcUrl: urls[0], maxRange: BigInt(e.BASE_RPC_MAX_RANGE) });
+  const archiveUrl = chainId === 8453 && e.BASE_RPC_URL_ARCHIVE !== "none" ? e.BASE_RPC_URL_ARCHIVE : null;
   const providers = {
-    primary: new EvmAdapter({ chainId, name: `${name} primary (${new URL(urls[0]).host})`, rpcUrl: urls[0], maxRange: BigInt(e.BASE_RPC_MAX_RANGE) }),
+    primary: archiveUrl
+      ? new ArchiveFallbackAdapter(primaryRpc, new EvmAdapter({ chainId, name: `(${new URL(archiveUrl).host})`, rpcUrl: archiveUrl, maxRange: 1_000n }))
+      : primaryRpc,
     confirm: new EvmAdapter({ chainId, name: `${name} confirmation (${new URL(urls[1]).host})`, rpcUrl: urls[1], maxRange: 10_000n }),
   };
   cache.set(chainId, providers);

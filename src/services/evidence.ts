@@ -10,6 +10,10 @@ import type { CommitmentSpec, Evidence, Transfer } from "@/core/types";
 import { db, type Sql } from "@/db/client";
 
 export const MAX_SCAN_BLOCKS_PER_CHECK = BigInt(process.env.KEPT_MAX_SCAN_BLOCKS ?? 3_000_000);
+/** Each scan step covers at most this many blocks, and the cursor is saved after every step. */
+const SCAN_STEP = BigInt(process.env.KEPT_SCAN_STEP_BLOCKS ?? 250_000);
+/** Wall-clock budget per check for scanning; the rest resumes on the next check. */
+export const SCAN_TIME_BUDGET_MS = Number(process.env.KEPT_SCAN_TIME_BUDGET_MS ?? 45_000);
 
 export { watchedAddresses } from "@/core/methods";
 import { watchedAddresses } from "@/core/methods";
@@ -75,7 +79,7 @@ async function scanAddress(
   addr: `0x${string}`,
   fromBlock: bigint,
   target: bigint,
-  budget: { remaining: bigint },
+  budget: { remaining: bigint; deadline: number },
 ): Promise<bigint> {
   const chainId = adapter.chainId;
   const scan = async (a: bigint, b: bigint) => {
@@ -83,12 +87,15 @@ async function scanAddress(
     await storeTransfers(sql, chainId, found);
     budget.remaining -= b - a + 1n;
   };
+  // A step is the smaller of the block budget and SCAN_STEP; stop between steps once out of time.
+  const step = () => (budget.remaining < SCAN_STEP ? budget.remaining : SCAN_STEP);
+  const canScan = () => budget.remaining > 0n && Date.now() < budget.deadline;
   const cur = await cursorFor(sql, chainId, token, addr);
   let from: bigint;
   let to: bigint;
   if (!cur) {
-    if (budget.remaining <= 0n) return fromBlock - 1n;
-    const b = fromBlock + budget.remaining - 1n < target ? fromBlock + budget.remaining - 1n : target;
+    if (!canScan()) return fromBlock - 1n;
+    const b = fromBlock + step() - 1n < target ? fromBlock + step() - 1n : target;
     await scan(fromBlock, b);
     await saveCursor(sql, chainId, token, addr, fromBlock, b);
     from = fromBlock;
@@ -97,14 +104,14 @@ async function scanAddress(
     from = BigInt(cur.scanned_from);
     to = BigInt(cur.scanned_to);
   }
-  while (from > fromBlock && budget.remaining > 0n) {
-    const a = from - budget.remaining > fromBlock ? from - budget.remaining : fromBlock;
+  while (from > fromBlock && canScan()) {
+    const a = from - step() > fromBlock ? from - step() : fromBlock;
     await scan(a, from - 1n);
     await saveCursor(sql, chainId, token, addr, a, to);
     from = a;
   }
-  if (from <= fromBlock && to < target && budget.remaining > 0n) {
-    const b = to + budget.remaining < target ? to + budget.remaining : target;
+  while (from <= fromBlock && to < target && canScan()) {
+    const b = to + step() < target ? to + step() : target;
     await scan(to + 1n, b);
     await saveCursor(sql, chainId, token, addr, from, b);
     to = b;
@@ -144,7 +151,7 @@ async function windowBlock(adapter: ChainAdapter, iso: string): Promise<bigint> 
   return n;
 }
 
-export async function collectEvidence(spec: CommitmentSpec, opts: { sql?: Sql; adapter?: ChainAdapter; includeUnfinalized?: boolean; budgetBlocks?: bigint } = {}): Promise<CollectedEvidence> {
+export async function collectEvidence(spec: CommitmentSpec, opts: { sql?: Sql; adapter?: ChainAdapter; includeUnfinalized?: boolean; budgetBlocks?: bigint; timeBudgetMs?: number } = {}): Promise<CollectedEvidence> {
   const sql = opts.sql ?? db();
   const adapter = opts.adapter ?? getChain(spec.chain_id).primary;
   const token = spec.token.address as `0x${string}`;
@@ -168,7 +175,7 @@ export async function collectEvidence(spec: CommitmentSpec, opts: { sql?: Sql; a
   const endBlock = fin.timestamp > windowEndTs ? await windowBlock(adapter, spec.window.end) : fin.number;
   const target = endBlock < fin.number ? endBlock : fin.number;
   const addrs = watchedAddresses(spec);
-  const budget = { remaining: opts.budgetBlocks ?? MAX_SCAN_BLOCKS_PER_CHECK };
+  const budget = { remaining: opts.budgetBlocks ?? MAX_SCAN_BLOCKS_PER_CHECK, deadline: Date.now() + (opts.timeBudgetMs ?? SCAN_TIME_BUDGET_MS) };
   let covered = target;
   for (const a of addrs) {
     const c = await scanAddress(sql, adapter, token, a, fromBlock, target, budget);

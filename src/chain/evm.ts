@@ -142,8 +142,10 @@ export class EvmAdapter implements ChainAdapter {
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getLogs", params: [params] }),
       signal: AbortSignal.timeout(30_000),
     });
-    if (!res.ok) throw new RpcError(`HTTP ${res.status}`, res.status === 429);
-    const json = (await res.json()) as { result?: RawLog[]; error?: { message: string; code: number } };
+    // Some providers refuse archive reads with an HTTP error status and the reason in the JSON body
+    // (publicnode: 403 "Archive requests require a personal token"), so read the body first.
+    const json = (await res.json().catch(() => null)) as { result?: RawLog[]; error?: { message: string; code: number } } | null;
+    if (!json) throw new RpcError(`HTTP ${res.status}`, res.status === 429);
     if (json.error) {
       if (/archive/i.test(json.error.message)) throw archiveHint(new Error(json.error.message), this.name, null);
       throw new RpcError(json.error.message, /limit|rate|too many/i.test(json.error.message));

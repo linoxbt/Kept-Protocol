@@ -17,6 +17,8 @@ const Env = z.object({
   BASE_RPC_URL_CONFIRM: z.string().url().default("https://mainnet.base.org"),
   /** Max blocks per eth_getLogs call for the primary RPC. Learned downward automatically. */
   BASE_RPC_MAX_RANGE: z.coerce.number().int().positive().default(50_000),
+  /** Archive-capable RPC used when the primary refuses a historical request. "none" disables it. */
+  BASE_RPC_URL_ARCHIVE: z.string().default("https://base.gateway.tenderly.co"),
   BASE_SEPOLIA_RPC_URL: z.string().url().default("https://base-sepolia-rpc.publicnode.com"),
   BASE_SEPOLIA_RPC_URL_CONFIRM: z.string().url().default("https://sepolia.base.org"),
   X402_PAY_TO: z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional(),
