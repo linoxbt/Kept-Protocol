@@ -23,6 +23,13 @@ import { runCheck } from "@/services/verify";
 import { pendingRoot } from "@/services/anchor";
 import { claimDue } from "@/services/monitor";
 import { migrate } from "../../scripts/migrate";
+import { runMethod } from "@/core/methods";
+import type { CommitmentSpec, Evidence } from "@/core/types";
+import { createSession, revokeSessions, validSession, verifyCredential } from "@/lib/auth";
+import { json, route } from "@/lib/http";
+import { decideDispute, listDisputes, openDispute } from "@/services/disputes";
+import { getJob, startJob } from "@/services/jobs";
+import { confirmViolation } from "@/services/verify";
 
 const URL = process.env.DATABASE_URL_TEST ?? "postgres://kept@127.0.0.1:5433/kept_test";
 const TOKEN = "0x1111111111111111111111111111111111111111" as const;
@@ -248,5 +255,86 @@ describe.skipIf(!DB_UP)("Kept lifecycle", () => {
   it("accepts a grounded manual draft and rejects an ungrounded quote", async () => {
     const [snap] = await sql`select id, text from source_snapshots where source_id = ${sourceId} order by captured_at desc limit 1`;
     await expect(createManualDraft({ snapshotId: snap.id, quote: "not in the page", fields: {}, projectId }, sql)).rejects.toThrow(/exact substring/);
+  });
+
+  it("handles a dispute: accepted disputes overlay the status until resolved", async () => {
+    await expect(openDispute({ commitmentId, reason: "too short", requester: "t1" }, sql)).rejects.toThrow(/20 characters/);
+    const d = await openDispute({ commitmentId, reason: "The team wallet is a vesting contract, not a holder wallet; see the deployment tx.", evidenceUrl: "https://example.org/tx", requester: "t1" }, sql);
+    expect(d.status).toBe("open");
+    await expect(decideDispute({ id: d.id, action: "resolve", note: "nothing to resolve", reviewer: "r" }, sql)).rejects.toThrow(/open cannot be resolved/);
+    await decideDispute({ id: d.id, action: "accept", note: "valid question, reviewing", reviewer: "r" }, sql);
+    const under = await runCheck(commitmentId, { sql, trigger: "test" });
+    expect(under.decision.status).toBe("disputed");
+    expect(under.decision.reason).toMatch(/Mechanical result:/);
+    await decideDispute({ id: d.id, action: "resolve", note: "address confirmed as the team wallet", reviewer: "r" }, sql);
+    const after = await runCheck(commitmentId, { sql, trigger: "test" });
+    expect(after.decision.status).not.toBe("disputed");
+    const all = await listDisputes(commitmentId, sql);
+    expect(all[0]).toMatchObject({ status: "resolved" });
+    expect(Object.keys(all[0])).not.toContain("contact");
+  });
+
+  it("recounts a burn shortfall on the second provider, resuming across checks", async () => {
+    const DEAD = "0x000000000000000000000000000000000000dEaD" as const;
+    const conf = new FixtureChain(8453, 1_735_689_600, 600, "fixture recount");
+    const burn = conf.add({ txHash: `0x${"cd".repeat(32)}`, token: TOKEN, from: TEAM, to: DEAD, amount: 10n * 10n ** 18n, at: "2025-03-10T00:00:00Z" });
+    conf.setNow("2025-06-01T00:00:00Z");
+    const [v] = await sql`select spec from commitment_versions where commitment_id = ${commitmentId} order by version limit 1`;
+    const spec: CommitmentSpec = {
+      ...(v.spec as CommitmentSpec),
+      category: "burn",
+      method_id: "burn_v1",
+      comparator: "gte",
+      threshold: "100",
+      threshold_base_units: (100n * 10n ** 18n).toString(),
+      window: { start: "2025-03-01T00:00:00.000Z", end: "2025-05-01T00:00:00.000Z" },
+      burn: { executor: TEAM, burn_addresses: [DEAD] },
+    };
+    const from = conf.blockAt(Date.parse(spec.window.start) / 1000) + 1n;
+    const evidence: Evidence = { finalizedBlock: conf.finalized, finalizedTime: conf.timeOf(conf.finalized), latestBlock: conf.finalized, fromBlock: from, transfers: [burn], unfinalizedTransfers: [], vesting: null, asOf: conf.timeOf(conf.finalized) };
+    const result = runMethod(spec, evidence);
+    expect(result.outcome).toBe("violated");
+    const collected = { evidence, complete: true, scannedTo: conf.finalized, partialTransfers: [], windowFromBlock: from, providerName: "fixture" };
+    const budget = (conf.finalized - from) / 3n + 1n;
+    const c1 = await confirmViolation(spec, result, collected, conf, sql, budget);
+    expect(c1).toMatchObject({ confirmation: "unavailable", inProgress: true });
+    const c2 = await confirmViolation(spec, result, collected, conf, sql, budget);
+    expect(c2.inProgress).toBe(true);
+    const c3 = await confirmViolation(spec, result, collected, conf, sql, budget);
+    expect(c3).toMatchObject({ confirmation: "confirmed" });
+  });
+
+  it("runs background jobs and records results and failures", async () => {
+    let pending: Promise<void> | null = null;
+    const ok = await startJob("test", null, async () => ({ n: 1n }), (w) => (pending = w()), sql);
+    await pending;
+    expect(await getJob(ok.id, sql)).toMatchObject({ status: "done", result: { n: "1" } });
+    const bad = await startJob("test", null, async () => { throw new Error("boom"); }, (w) => (pending = w()), sql);
+    await pending;
+    expect(await getJob(bad.id, sql)).toMatchObject({ status: "failed", error: "boom" });
+  });
+
+  it("limits failed credentials before checking them, and revokes sessions on sign-out", async () => {
+    const r = new Request("https://kept.test/api", { headers: { "x-real-ip": "192.0.2.77" } });
+    expect(await verifyCredential(r, "dev-admin-key-change-me-0000000000")).toBe(true);
+    for (let i = 0; i < 10; i++) expect(await verifyCredential(r, `wrong-${i}`)).toBe(false);
+    await expect(verifyCredential(r, "dev-admin-key-change-me-0000000000")).rejects.toThrow(/too many failed/);
+    const s = await createSession();
+    expect(await validSession(s.value)).toBe(true);
+    await revokeSessions();
+    expect(await validSession(s.value)).toBe(false);
+  }, 30_000);
+
+  it("scopes idempotency keys to the caller", async () => {
+    let calls = 0;
+    const h = route(async () => json({ secret: `value-${++calls}` }));
+    const post = (auth?: string) => new Request("https://kept.test/api/v1/idem-test", { method: "POST", headers: { "idempotency-key": "k1", ...(auth ? { authorization: auth } : {}) } });
+    const a = await (await h(post("Bearer admin-one"), {})).json();
+    const replay = await h(post("Bearer admin-one"), {});
+    expect(replay.headers.get("idempotent-replayed")).toBe("true");
+    expect(await replay.json()).toEqual(a);
+    const stranger = await (await h(post(), {})).json();
+    expect(stranger).not.toEqual(a);
+    expect(calls).toBe(2);
   });
 });

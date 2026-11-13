@@ -33,7 +33,13 @@ export function openapi(base: string) {
       "/api/v1/extractions/manual": { post: { summary: "Reviewer-written draft, grounded against a snapshot", security: admin, responses: { 201: { description: "Extraction" }, ...errors } } },
       "/api/v1/commitments": { post: { summary: "Confirm a draft as version 1 and start monitoring", security: admin, responses: { 201: { description: "Commitment" }, ...errors } } },
       "/api/v1/commitments/{id}": { get: { summary: "Commitment with current status", parameters: [id("id")], responses: { 200: { description: "Commitment" }, ...errors } } },
-      "/api/v1/commitments/{id}/verify": { post: { summary: "Run a check now", security: admin, parameters: [id("id")], responses: { 200: { description: "Check result and receipt" }, ...errors } } },
+      "/api/v1/commitments/{id}/verify": { post: { summary: "Run a check now, in the background", security: admin, parameters: [id("id")], responses: { 202: { description: "Job to poll at /api/v1/jobs/{id}" }, 409: { description: "A check is already running" }, ...errors } } },
+      "/api/v1/commitments/{id}/disputes": {
+        get: { summary: "Disputes filed against a commitment and their decisions", parameters: [id("id")], responses: { 200: { description: "Disputes" } } },
+        post: { summary: "Dispute a record (public, 3 per requester per day)", parameters: [id("id")], responses: { 201: { description: "Dispute" }, ...errors } },
+      },
+      "/api/v1/disputes/{id}": { post: { summary: "Accept, reject or resolve a dispute", security: admin, parameters: [id("id")], responses: { 200: { description: "Dispute" }, ...errors } } },
+      "/api/v1/jobs/{id}": { get: { summary: "A background job: running, done (with result) or failed", parameters: [id("id")], responses: { 200: { description: "Job" }, ...errors } } },
       "/api/v1/commitments/{id}/versions": {
         get: { summary: "Version history", parameters: [id("id")], responses: { 200: { description: "Versions" } } },
         post: { summary: "Confirm a policy change as the next version", security: admin, parameters: [id("id")], responses: { 201: { description: "Version" }, ...errors } },
@@ -45,7 +51,7 @@ export function openapi(base: string) {
           responses: { 200: { description: "Diff" }, ...errors },
         },
       },
-      "/api/v1/hindcast": { post: { summary: "Replay versions over historical evidence", security: admin, responses: { 201: { description: "Run and receipt" }, ...errors } } },
+      "/api/v1/hindcast": { post: { summary: "Replay versions over historical evidence, in the background", security: admin, responses: { 202: { description: "Job to poll; its result names the run and receipt" }, ...errors } } },
       "/api/v1/hindcast/{id}": { get: { summary: "A replay run", parameters: [id("id")], responses: { 200: { description: "Run" }, ...errors } } },
       "/api/v1/receipts/{id}": { get: { summary: "Receipt JSON as hashed and signed, with inclusion proof once anchored", parameters: [id("id")], responses: { 200: { description: "Receipt" }, ...errors } } },
       "/api/v1/anchors/pending": { get: { summary: "Merkle root of receipts awaiting anchoring", responses: { 200: { description: "Root" } } } },
@@ -53,7 +59,7 @@ export function openapi(base: string) {
       "/api/v1/feed": { get: { summary: "Recent status changes", responses: { 200: { description: "Feed" } } } },
       "/api/v1/webhooks": { post: { summary: "Register a signed webhook; the secret is returned once", security: admin, responses: { 201: { description: "Webhook" }, ...errors } } },
       "/api/v1/tryit": { post: { summary: "Try-it preview extraction (public, rate-limited, never published)", responses: { 201: { description: "Unconfirmed preview" }, ...errors } } },
-      "/api/v1/tryit/{id}/check": { post: { summary: "Run a preview check on one draft; attribution stays unconfirmed", parameters: [id("id")], responses: { 200: { description: "Unconfirmed preview result" }, ...errors } } },
+      "/api/v1/tryit/{id}/check": { post: { summary: "Run a preview check on one draft; attribution stays unconfirmed", parameters: [id("id")], responses: { 202: { description: "Job to poll; its result is the unconfirmed preview check" }, ...errors } } },
       "/api/v1/agent/commitments": {
         get: {
           summary: "Agent lookup by token, paid per query over x402",

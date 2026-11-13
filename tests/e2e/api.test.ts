@@ -1,5 +1,8 @@
 /**
- * HTTP-level checks against a running Kept server. Skipped unless KEPT_E2E_URL is set, e.g.
+ * HTTP-level checks against a running Kept server. Skipped unless KEPT_E2E_URL is set. Tests that
+ * write need KEPT_E2E_ADMIN_KEY (a real admin credential) and are skipped without it, so the suite
+ * can run read-only against production:
+ *   KEPT_E2E_URL=https://kept-protocol.netlify.app npx vitest run tests/e2e
  *   KEPT_E2E_URL=http://localhost:3100 KEPT_E2E_ADMIN_KEY=… npx vitest run tests/e2e
  */
 import { createHash } from "node:crypto";
@@ -7,7 +10,7 @@ import { recoverMessageAddress } from "viem";
 import { describe, expect, it } from "vitest";
 
 const BASE = process.env.KEPT_E2E_URL;
-const KEY = process.env.KEPT_E2E_ADMIN_KEY ?? "dev-admin-key-change-me-0000000000";
+const KEY = process.env.KEPT_E2E_ADMIN_KEY;
 const d = BASE ? describe : describe.skip;
 
 d("Kept HTTP API", () => {
@@ -33,7 +36,7 @@ d("Kept HTTP API", () => {
     expect((await res.json()).title).toBe("Unauthorized");
   });
 
-  it("validates bodies and replays idempotent POSTs", async () => {
+  it.skipIf(!KEY)("validates bodies and replays idempotent POSTs", async () => {
     const auth = { authorization: `Bearer ${KEY}`, "content-type": "application/json" };
     const bad = await fetch(`${BASE}/api/v1/projects`, { method: "POST", headers: auth, body: JSON.stringify({ name: "" }) });
     expect(bad.status).toBe(422);

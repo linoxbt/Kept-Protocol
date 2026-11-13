@@ -75,7 +75,8 @@ export async function decideDispute(
     const [d] = await tx<DisputeRow[]>`select ${tx.unsafe(PUBLIC_COLS)} from disputes where id = ${input.id} for update`;
     if (!d) throw new NotFound("no such dispute");
     const allowed: Record<string, DisputeRow["status"][]> = { accept: ["open"], reject: ["open", "accepted"], resolve: ["accepted"] };
-    if (!allowed[input.action].includes(d.status)) throw new Invalid(`a dispute that is ${d.status} cannot be ${input.action}ed`);
+    const past = { accept: "accepted", reject: "rejected", resolve: "resolved" }[input.action];
+    if (!allowed[input.action].includes(d.status)) throw new Invalid(`a dispute that is ${d.status} cannot be ${past}`);
     const next = input.action === "accept" ? "accepted" : input.action === "reject" ? "rejected" : "resolved";
     const [row] = await tx<DisputeRow[]>`
       update disputes set status = ${next}, resolution = ${`${note} (${input.reviewer})`.slice(0, 4000)},

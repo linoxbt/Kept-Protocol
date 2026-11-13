@@ -1,11 +1,14 @@
+import { connection } from "next/server";
 import { baseUrl } from "@/lib/http";
 import { getSigner } from "@/receipts/signer";
 
 /**
  * ERC-8004-style agent registration file. Publishes Kept's receipt-signing address so buyers can
- * check provenance of signed responses and receipts. The on-chain identity registration points here.
+ * check provenance of signed responses and receipts. (Served as a registration file; Kept is not yet registered in an on-chain ERC-8004 identity registry.)
  */
 export async function GET(req: Request) {
+  // Must run per request: the signer is the deployment's own key, which does not exist at build time.
+  await connection();
   const base = baseUrl(req);
   const body = {
     type: "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",

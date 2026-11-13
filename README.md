@@ -21,11 +21,13 @@ Built for SERV Hackathon Edition 02 (Open Track).
 | **Hindcast** | Replays every version over the same historical evidence and shows where the outcomes diverge, with a signed replay receipt. |
 | **Grifter** | A 23-case adversarial suite against Kept's own pipeline: injection, ambiguous quantifiers, contradictions, unit and date traps, wallet poisoning, satisfied-looking-but-not, evidence spoofing, finality and provider disagreement. |
 | **Try-it mode** | Anyone can test any URL without an account. Results are labelled *Unconfirmed preview*, never published, expire in 24 h, and can never show *Breached*. |
+| **Disputes** | Anyone can dispute a record with evidence. A reviewer accepts it (the commitment shows *Disputed*, with the mechanical result still in the reason), rejects it, or resolves it; every decision is kept and shown. |
 | **Agent API** (x402) | `GET /api/v1/agent/commitments?token=…` is paid per query over x402 and returns signed records with `coverage: none | partial | full`, so "no record" is never read as "clean". |
 
 ### Status rules
 
-- **Breached** requires a violation at a *finalized* block, by an *attributed* address, confirmed by a *second, independent* RPC provider. Anything less is **At risk**.
+- Statuses: *Pending*, *Awaiting evidence* (history still being scanned, or a shortfall being recounted), *Verified*, *At risk*, *Breached*, *Unverifiable*, *Disputed*.
+- **Breached** requires a violation at a *finalized* block, by an *attributed* address, confirmed by a *second, independent* RPC provider. Anything less is **At risk**. A shortfall (a burn below target) is confirmed by recounting the whole period on the second provider; long periods are recounted a few million blocks per check until done.
 - **Verified to date** and **Verified, final** are different claims; the UI never blurs them.
 - An address suggested by a model or a user is `unconfirmed` and can never produce a breach.
 - Kept never says "fraud", "scam", "rug" or "lied". A breach is a mechanical fact about a stated condition.
@@ -89,7 +91,7 @@ scripts          migrate, worker, grifter, anchor, kept-verify, demo
 
 ## Run it
 
-Requirements: Node 20+, Postgres 14+.
+Requirements: Node 22.19+, Postgres 14+.
 
 ```bash
 npm ci
@@ -98,22 +100,28 @@ npm run db:migrate
 npm run dev                         # http://localhost:3000
 ```
 
-Without `SERV_API_KEY`, new extractions pause; monitoring, receipts, Precedent and Hindcast all work, and reviewers can write grounded manual drafts. Production refuses to start without `DATABASE_URL`, `KEPT_SIGNER_PRIVATE_KEY` and `KEPT_ADMIN_KEY`.
+Without `SERV_API_KEY`, new extractions pause; monitoring, receipts, Precedent and Hindcast all work, and reviewers can write grounded manual drafts from the admin console.
+
+Secrets bootstrap themselves: on first start with a database, Kept generates its receipt-signing key, anchoring operator key, session secret, cron secret and a one-time admin setup token, and stores them in its own database (AES-256-GCM encrypted when `KEPT_SECRETS_KEK` is set). An environment variable always wins. The first admin opens `/admin/setup` with the setup token printed in the server log and sets a password.
 
 | Script | Does |
 |---|---|
-| `npm test` | 52 unit and integration tests. Integration tests need Postgres at `DATABASE_URL_TEST`. |
+| `npm test` | 63 unit and integration tests. Integration tests need Postgres at `DATABASE_URL_TEST` and are skipped when none is reachable. `KEPT_E2E_URL=… npx vitest run tests/e2e` runs read-only HTTP checks against a deployment. |
 | `npm run grifter` | Runs the adversarial suite offline. `-- --live` sends every source to SERV; `--save` stores the run. |
-| `npm run worker` | Long-running monitor: due checks, source watching, deadline alerts, webhooks. |
-| `npm run anchor` | Attests the pending Merkle root on Base through EAS. `-- --register-schema` runs once. |
+| `npm run worker` | Long-running monitor: due checks, source watching, deadline alerts, webhooks, and automatic EAS anchoring once the operator key is funded. |
+| `npm run anchor` | Attests the pending Merkle root on Base through EAS by hand. `-- --register-schema` runs once. |
 | `npm run verify-receipt -- <file or URL>` | Independently verifies a receipt (see below). |
 | `npm run demo -- deploy \| seed \| breach \| rewrite` | The live-breach demo on Kept's own labelled token. |
 
 ### Deploy
 
-- **Web and API:** Vercel. Set the environment from `.env.example`; Vercel Cron calls `/api/cron/tick` daily as a backstop.
-- **Monitoring cadence:** run `Dockerfile.worker` on Railway or Fly, or enable `.github/workflows/monitor.yml` (every 10 minutes).
-- **Database:** any managed Postgres (Supabase, Neon, RDS). Run `npm run db:migrate` once.
+The reference deployment:
+
+- **Web and API:** Railway runs `next start` (no function time limits; long work runs as background jobs that the UI polls).
+- **Worker:** Railway runs `Dockerfile.worker`, which migrates the database and then ticks every 60 s. Any HTTP cron can also call `GET /api/cron/tick` with `Authorization: Bearer $CRON_SECRET`; deliveries and anchoring are locked, so two schedulers never double-send.
+- **Database:** Railway Postgres on the private network only (no public TCP proxy).
+- **Public domain:** Netlify proxies `/*` to the Railway web service (`netlify.toml`). At deploy time, `KEPT_EDGE_TOKEN=… node scripts/netlify-edge-config.mjs > netlify.toml` adds the `x-kept-edge` header that lets the app trust Netlify's client-IP header for rate limits; only the token's SHA-256 is in the repository.
+- **Anchoring:** `/api/v1/health` shows the operator address. Send it a little ETH on Base and the worker anchors pending receipts every 6 hours (`ANCHOR_INTERVAL_S`).
 
 ### The live demo (never against a real team)
 
@@ -148,6 +156,8 @@ OpenAPI 3.1 at `/api/v1/openapi.json`; human docs at `/docs`. Public reads carry
 
 ## Limitations, stated plainly
 
+- The agent card is an ERC-8004-style registration file; Kept is not yet registered in an on-chain ERC-8004 identity registry.
+- x402 payments default to Base Sepolia through the public x402.org facilitator. Real revenue needs `X402_NETWORK=eip155:8453` and a mainnet facilitator.
 - Base only in this release; methods read ERC-20 `Transfer` logs. Treasury, governance and fee-distribution commitments are classified and recorded but not yet monitored.
 - Windows that start months back need an archive-capable RPC. Free public endpoints serve recent blocks only, and Kept says so in the check error instead of guessing.
 - A database is not immutable, and Kept never claims it is. Integrity comes from the hash chain, the signatures and the on-chain anchors, which third parties can check.

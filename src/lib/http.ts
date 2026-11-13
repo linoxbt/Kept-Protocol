@@ -54,24 +54,34 @@ export async function parseBody<T extends z.ZodType>(req: Request, schema: T): P
 }
 
 /**
+ * SHA-256 of the secret header the Netlify edge adds to every proxied request (x-kept-edge). Only
+ * the hash is in the repository; the token itself lives in the deployed Netlify configuration.
+ * KEPT_EDGE_TOKEN_SHA256 overrides it.
+ */
+const EDGE_TOKEN_SHA256 = "e0c3408dc352cf92f43033e468fef7ee024213f619f74fd361911be0f9728c85";
+
+/**
  * The caller's IP, from headers a client cannot forge:
- *  1. via the Netlify edge (proved by the shared KEPT_EDGE_TOKEN header the edge adds), Netlify's
- *     own x-nf-client-connection-ip;
+ *  1. via the Netlify edge (proved by the x-kept-edge header), Netlify's x-nf-client-connection-ip;
  *  2. otherwise Railway's x-real-ip, which the platform sets to the connecting address;
  *  3. otherwise the right-most X-Forwarded-For hop (appended by the nearest proxy).
+ * Until the edge sends its header (KEPT_EDGE_STRICT unset), x-nf-client-connection-ip is also
+ * accepted unproven, so visitors behind the edge do not all share Netlify's address.
  * The left-most X-Forwarded-For entry is never used: the client writes it.
  */
 export function clientIp(req: Request): string {
   return clientIpInfo(req).ip;
 }
 
-export function clientIpInfo(req: Request): { ip: string; source: "edge" | "real-ip" | "xff" | "none" } {
-  const token = process.env.KEPT_EDGE_TOKEN;
+export function clientIpInfo(req: Request): { ip: string; source: "edge" | "edge-unverified" | "real-ip" | "xff" | "none" } {
+  const nf = req.headers.get("x-nf-client-connection-ip")?.trim();
   const given = req.headers.get("x-kept-edge");
-  if (token && given && given.length === token.length && timingSafeEqual(Buffer.from(given), Buffer.from(token))) {
-    const ip = req.headers.get("x-nf-client-connection-ip");
-    if (ip) return { ip: ip.trim(), source: "edge" };
+  if (nf && given) {
+    const want = Buffer.from(process.env.KEPT_EDGE_TOKEN_SHA256 ?? EDGE_TOKEN_SHA256, "hex");
+    const got = createHash("sha256").update(given).digest();
+    if (want.length === got.length && timingSafeEqual(want, got)) return { ip: nf, source: "edge" };
   }
+  if (nf && process.env.KEPT_EDGE_STRICT !== "1") return { ip: nf, source: "edge-unverified" };
   const real = req.headers.get("x-real-ip");
   if (real) return { ip: real.trim(), source: "real-ip" };
   const xff = req.headers.get("x-forwarded-for");
