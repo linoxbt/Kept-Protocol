@@ -359,4 +359,11 @@ describe.skipIf(!DB_UP)("Kept lifecycle", () => {
       resetBootstrapForTests();
     }
   });
+
+  it("keeps a breach standing after the project relaxes the promise", async () => {
+    const r = await runCheck(commitmentId, { sql, trigger: "test" });
+    expect(r.decision).toMatchObject({ status: "breached", final: true });
+    expect(r.decision.reason).toMatch(/^Breached under v1: 4,000,000 XYZ left/);
+    expect(r.decision.reason).toMatch(/revised afterwards \(v2\); a later revision does not undo a breach/);
+  });
 });

@@ -210,9 +210,16 @@ export async function runCheck(commitmentId: string, opts: { sql?: Sql; trigger?
   const { result, collected, confirmation } = evaluation;
   // An accepted dispute overlays the status until it is resolved; the mechanical result stays in the reason.
   const dispute = await activeDispute(commitmentId, sql);
+  const standing = dispute ? null : await standingBreach(commitmentId, version, sql);
   const decision: StatusDecision = dispute
     ? { status: "disputed", final: false, reason: `Under review after a dispute (${dispute.id}). Mechanical result: ${evaluation.decision.reason}` }
-    : evaluation.decision;
+    : standing
+      ? {
+          status: "breached",
+          final: true,
+          reason: `Breached under v${standing.version}: ${standing.reason.replace(/^Condition not met:\s*/, "")}. The promise was revised afterwards (v${version.version}); a later revision does not undo a breach. Under v${version.version} alone: ${evaluation.decision.reason}`,
+        }
+      : evaluation.decision;
   const signer = getSigner();
   const limitations = [...(METHOD_LIMITATIONS[spec.method_id] ?? []), ...result.notes];
   if (!collected.complete) limitations.push(`Evidence backfill incomplete: scanned to block ${collected.scannedTo}.`);
@@ -314,6 +321,29 @@ export async function runCheck(commitmentId: string, opts: { sql?: Sql; trigger?
              where id = ${commitmentId}`;
     return { checkId, receipt, decision, changed };
   });
+}
+
+/**
+ * A final breach under an earlier version stands: a project cannot clear it by rewriting its
+ * promise afterwards. Only a reviewer correction (a version fixing Kept's own reading of the
+ * statement) re-evaluates from scratch; disputes are the path for contesting a breach.
+ */
+export async function standingBreach(
+  commitmentId: string,
+  current: { version: number; change_kind: string },
+  sql: Sql = db(),
+): Promise<{ version: number; reason: string; receiptId: string | null } | null> {
+  if (current.change_kind === "correction" || current.version <= 1) return null;
+  const [b] = await sql<{ version: number; reason: string | null; receipt_id: string | null }[]>`
+    select v.version, sc.reason, k.receipt_id
+    from checks k
+    join commitment_versions v on v.id = k.commitment_version_id
+    left join status_changes sc on sc.receipt_id = k.receipt_id and sc.to_status = 'breached'
+    where k.commitment_id = ${commitmentId} and k.status = 'breached' and k.final and v.version < ${current.version}
+      and not exists (select 1 from commitment_versions c where c.commitment_id = ${commitmentId} and c.change_kind = 'correction' and c.version > v.version and c.version <= ${current.version})
+    order by k.finished_at
+    limit 1`;
+  return b ? { version: b.version, reason: b.reason ?? "the condition was not met", receiptId: b.receipt_id } : null;
 }
 
 /** Takes the commitment's check lease (the same one the worker uses), so a manual check never runs alongside a scheduled one. */

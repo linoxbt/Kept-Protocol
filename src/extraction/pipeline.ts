@@ -22,6 +22,27 @@ export const MODELS = {
 };
 
 export const MAX_SPANS = 8;
+
+/**
+ * One promise is often written as consecutive sentences ("Team tokens are locked for 12 months
+ * from X. No team tokens will be transferred before then."). Spans of the same category that touch
+ * (only whitespace between them) become one span, so the reviewer sees one draft, not two
+ * duplicates. Spans with any other text between them stay separate, so contradictions elsewhere in
+ * a document are still compared draft against draft.
+ */
+export function mergeAdjacent(text: string, spans: { quote: string; start: number; end: number; category_hint: string }[]): void {
+  spans.sort((a, b) => a.start - b.start);
+  for (let i = 0; i < spans.length - 1; ) {
+    const a = spans[i];
+    const b = spans[i + 1];
+    const gap = b.start >= a.end ? text.slice(a.end, b.start) : "";
+    if (a.category_hint === b.category_hint && /^\s{0,3}$/.test(gap) && b.end - a.start <= 600) {
+      a.end = Math.max(a.end, b.end);
+      a.quote = text.slice(a.start, a.end);
+      spans.splice(i + 1, 1);
+    } else i++;
+  }
+}
 const CONTEXT_CHARS = 2000;
 
 export interface ProjectContext {
@@ -164,6 +185,7 @@ export async function runExtraction(text: string, project: ProjectContext, deps:
     if (spans.some((x) => x.start === at.start && x.end === at.end)) continue;
     spans.push({ quote: text.slice(at.start, at.end), start: at.start, end: at.end, category_hint: s.category_hint });
   }
+  mergeAdjacent(text, spans);
   for (const s of spans.slice(MAX_SPANS)) dropped.push({ quote: s.quote.slice(0, 200), reason: `more than ${MAX_SPANS} spans in one source` });
 
   const projectBlock = JSON.stringify({ name: project.name, chain_id: project.chainId, token_address: project.tokenAddress, token_symbol: project.tokenSymbol });

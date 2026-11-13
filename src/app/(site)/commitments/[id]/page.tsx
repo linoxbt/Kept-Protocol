@@ -83,6 +83,7 @@ async function Commitment({ params }: { params: Promise<{ id: string }> }) {
         </div>
       ) : null}
 
+      <h1 className="sr-only">{d.project.name}: {s.condition_summary}</h1>
       {/* Promise band */}
       <section className="mb-8">
         <p className="label mb-2">What was promised</p>
