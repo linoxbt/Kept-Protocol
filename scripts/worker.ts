@@ -19,7 +19,7 @@ async function loop() {
       const r = await tick({ maxChecks: 25, maxSources: 5, deadlineMs: Math.max(20_000, every - 5_000) });
       const errors = r.checks.filter((c) => c.error);
       console.log(
-        JSON.stringify({ at: new Date().toISOString(), checks: r.checks.length, changed: r.checks.filter((c) => c.changed).length, errors: errors.length, sources: r.sources.length, webhooks: r.outbox, anchor: r.anchor, demo: r.demo, ms: r.ms }),
+        JSON.stringify({ at: new Date().toISOString(), checks: r.checks.length, changed: r.checks.filter((c) => c.changed).length, errors: errors.length, sources: r.sources.length, webhooks: r.outbox, anchor: r.anchor, demo: r.demo, curated: r.curated?.added.length || r.curated?.failed.length ? r.curated : undefined, ms: r.ms }),
       );
       for (const e of errors) console.error(`check ${e.commitmentId} failed: ${e.error}`);
     } catch (e) {
