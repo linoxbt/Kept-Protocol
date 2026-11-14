@@ -1,5 +1,5 @@
 /**
- * On-chain anchoring. All receipts not yet anchored are hashed into a Merkle root, which is
+ * Onchain anchoring. All receipts not yet anchored are hashed into a Merkle root, which is
  * attested on Base through EAS (predeploy 0x4200…0021). Each receipt then records its anchor and
  * leaf index, so anyone can check inclusion. Receipts are only marked anchored after the
  * attestation transaction succeeds.

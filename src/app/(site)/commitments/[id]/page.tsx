@@ -25,7 +25,7 @@ export default function CommitmentPage({ params }: { params: Promise<{ id: strin
 }
 
 const ATTR_LABEL: Record<string, string> = {
-  onchain_proven: "on-chain proven",
+  onchain_proven: "onchain proven",
   declared_by_project: "declared by project",
   confirmed_by_reviewer: "confirmed by reviewer",
   unconfirmed: "unconfirmed",

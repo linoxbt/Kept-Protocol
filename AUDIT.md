@@ -34,7 +34,7 @@ provide; the code side is done.
 | M5 | Medium | Disputed / Expired / Awaiting evidence never set | Fixed | Disputes implemented end to end (public form, admin queue, status overlay, webhooks); Awaiting evidence during backfill and recount; Expired removed (it had no meaning distinct from Verified, final). |
 | M6 | Medium | Treasury / governance / fee not monitored | Fixed (stated) | Docs and README state they are recorded but not monitored in this release. |
 | M7 | Medium | No manual-draft UI | Fixed | Admin console form, grounded against the snapshot like model drafts. |
-| M8 | Medium | ERC-8004 not registered on-chain | Fixed (stated) | Called "ERC-8004-style" everywhere; README states it is not registered. |
+| M8 | Medium | ERC-8004 not registered onchain | Fixed (stated) | Called "ERC-8004-style" everywhere; README states it is not registered. |
 | M9 | Medium | CI never observed | Fixed | GitHub Actions `ci` green on every push (lint, typecheck, tests with Postgres, Grifter, build). |
 | M10 | Low | Stale README, vercel.json, monitor.yml | Fixed | README and `.env.example` rewritten for Railway + Netlify; unused files removed. |
 | M11 | Low | kept-web references missing worker variables | Fixed | Removed the four empty references from kept-web and a leftover probe variable from the worker. |

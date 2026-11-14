@@ -63,7 +63,7 @@ export function NewProjectForm() {
           <option value="launchpad">launchpad</option>
         </select>
       </div>
-      <input className="input mono text-xs" placeholder="Token address (reads decimals on-chain)" value={f.token_address} onChange={(e) => setF({ ...f, token_address: e.target.value })} />
+      <input className="input mono text-xs" placeholder="Token address (reads decimals onchain)" value={f.token_address} onChange={(e) => setF({ ...f, token_address: e.target.value })} />
       <textarea className="input text-sm" placeholder="Description (optional)" value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} />
       <label className="text-xs flex items-center gap-2"><input type="checkbox" checked={f.is_demo} onChange={(e) => setF({ ...f, is_demo: e.target.checked })} /> clearly labelled demo project</label>
       <button className="btn" disabled={a.busy}>{a.busy ? "creating…" : "Create"}</button>

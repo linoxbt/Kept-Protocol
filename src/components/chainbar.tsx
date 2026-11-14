@@ -41,7 +41,7 @@ export function ChainBar() {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 border-t border-line bg-bg/60 backdrop-blur">
       {cells.map(([k, v], i) => (
-        <div key={k} className={`px-5 py-3.5 border-line ${i > 0 ? "lg:border-l" : ""} ${i % 2 === 1 ? "border-l sm:border-l-0" : ""} ${i >= 2 ? "border-t sm:border-t-0" : ""}`}>
+        <div key={k} className={`px-5 py-3.5 border-line ${i > 0 ? "lg:border-l" : ""} ${i % 2 === 1 ? "border-l sm:border-l-0" : ""} ${i >= 2 ? "border-t sm:border-t-0" : ""} ${i === 4 ? "col-span-2 sm:col-span-1" : ""}`}>
           <p className="label !text-[10px]">{k}</p>
           <p className="mono text-sm mt-1 flex items-center gap-2">
             {i === 0 ? <span className="live-dot" /> : null}

@@ -2,7 +2,7 @@
 
 **Promises made. Evidence tracked. Commitments verified.**
 
-Kept turns public crypto promises into structured commitments, checks them with deterministic code against Base chain data, and keeps a cited, versioned, replayable record of every result. SERV Reasoning reads the promises. Code decides the facts. No AI output is ever the final word on what happened on-chain.
+Kept turns public crypto promises into structured commitments, checks them with deterministic code against Base chain data, and keeps a cited, versioned, replayable record of every result. SERV Reasoning reads the promises. Code decides the facts. No AI output is ever the final word on what happened onchain.
 
 The feature that matters most: **projects quietly rewrite their promises after breaking them, and Kept catches it.** Every version of a promise is kept. When a revision excuses a transfer that already happened, Kept flags it: *condition relaxed after the event*.
 
@@ -36,7 +36,7 @@ Built for SERV Hackathon Edition 02 (Open Track).
 
 ## How Kept uses SERV Reasoning
 
-SERV is called only on the language side, at three call sites. It is never asked whether something happened on-chain, so if SERV is down, monitoring keeps running.
+SERV is called only on the language side, at three call sites. It is never asked whether something happened onchain, so if SERV is down, monitoring keeps running.
 
 | # | Call site | Model (configurable) | SERV features | Output, validated by code |
 |---|---|---|---|---|
@@ -156,11 +156,11 @@ OpenAPI 3.1 at `/api/v1/openapi.json`; human docs at `/docs`. Public reads carry
 
 ## Limitations, stated plainly
 
-- The agent card is an ERC-8004-style registration file; Kept is not yet registered in an on-chain ERC-8004 identity registry.
-- x402 payments settle in USDC on Base mainnet through PayAI's public facilitator; the facilitator is a third party that relays each signed payment on-chain. Without configuration the code defaults to Base Sepolia (x402.org) for testing.
+- The agent card is an ERC-8004-style registration file; Kept is not yet registered in an onchain ERC-8004 identity registry.
+- x402 payments settle in USDC on Base mainnet through PayAI's public facilitator; the facilitator is a third party that relays each signed payment onchain. Without configuration the code defaults to Base Sepolia (x402.org) for testing.
 - Base only in this release; methods read ERC-20 `Transfer` logs. Treasury, governance and fee-distribution commitments are classified and recorded but not yet monitored.
 - History: free public endpoints serve recent blocks only. When the primary refuses a historical request, Kept retries it on an archive-capable fallback (`BASE_RPC_URL_ARCHIVE`, default Tenderly's public Base gateway, 1,000 blocks per log query), so old windows are checked, about 150,000 blocks per check. A paid archive RPC as `BASE_RPC_URL` makes backfill much faster.
-- A database is not immutable, and Kept never claims it is. Integrity comes from the hash chain, the signatures and the on-chain anchors, which third parties can check.
+- A database is not immutable, and Kept never claims it is. Integrity comes from the hash chain, the signatures and the onchain anchors, which third parties can check.
 - Prices on the landing page are hypotheses to test with the first launchpad pilot, not market data.
 
 Not investment advice. MIT licensed.

@@ -1,6 +1,6 @@
 /**
  * SERV Reasoning client. SERV interprets language; it is never asked whether something happened
- * on-chain. Transport policy (section 4 of the PRD):
+ * onchain. Transport policy (section 4 of the PRD):
  *  - 429: exponential backoff with jitter (1s, 2s, 4s; cap 30s), honouring Retry-After.
  *  - 5xx / 502 from Shadow Agent: up to 2 retries, then the item goes to review.
  *  - 400: no retry (a code or prompt bug). 401: fatal, extraction halts.
