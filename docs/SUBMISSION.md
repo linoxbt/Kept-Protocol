@@ -34,7 +34,7 @@ revision, and the breach stands.
    applies. Both runs must agree with each other and with the same policy matrix implemented in code;
    any disagreement sends the draft to a human reviewer.
 
-SERV is never asked whether something happened on-chain. Every call is metered (model, prompt
+SERV is never asked whether something happened onchain. Every call is metered (model, prompt
 version, tokens, latency, cost) under a daily budget, and if SERV is down, monitoring continues.
 Grifter, a 23-case adversarial suite (prompt injection, ambiguous quantifiers, wallet poisoning,
 contradictions, finality traps), runs the pipeline against a deliberately fooled model and proves the

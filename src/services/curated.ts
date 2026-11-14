@@ -54,7 +54,7 @@ export const CURATED: CuratedCommitment[] = [
       vesting_contract: null,
       derived: [
         { field: "window_start", rule: "start of tracking on Kept" },
-        { field: "window_end", rule: "\"until mid 2027\": the burn contract's full daily rate ends 2027-05-11 15:42 UTC (on-chain schedule of 0x21bb…1a1A)" },
+        { field: "window_end", rule: "\"until mid 2027\": the burn contract's full daily rate ends 2027-05-11 15:42 UTC (onchain schedule of 0x21bb…1a1A)" },
         { field: "amount", rule: "\"about 5 million … every day\": 5,000,000 DEGEN × 179 days (2026-11-13 to 2027-05-11)" },
       ],
       ambiguity_flags: ["\"about\" 5 million per day; checked as a cumulative 5,000,000 per day over the window"],

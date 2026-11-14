@@ -50,7 +50,7 @@ function Hero() {
         </Reveal>
         <Reveal delay={80}>
           <h1 className="display max-w-[15ch] mx-auto mt-8">
-            Every promise, <span className="serif italic font-normal">checked</span> on-chain.
+            Every promise, <span className="serif italic font-normal">checked</span> onchain.
           </h1>
         </Reveal>
         <Reveal delay={160}>
@@ -60,9 +60,9 @@ function Hero() {
           </p>
         </Reveal>
         <Reveal delay={240} className="w-full">
-          <form action="/try" method="get" className="mt-10 mx-auto flex flex-col sm:flex-row gap-2 max-w-xl p-1.5 rounded-2xl border border-line-strong bg-panel/80 backdrop-blur">
-            <input name="url" type="url" required placeholder="Paste a project's tokenomics or docs URL" className="flex-1 bg-transparent px-4 h-12 text-[15px] outline-none placeholder:text-faint" aria-label="Project URL" />
-            <button className="h-12 px-6 rounded-xl bg-accent text-white font-medium hover:brightness-110 transition whitespace-nowrap" type="submit">
+          <form action="/try" method="get" className="mt-10 mx-auto w-full flex flex-col sm:flex-row gap-3 sm:gap-2 max-w-xl sm:p-1.5 sm:rounded-2xl sm:border sm:border-line-strong sm:bg-panel/80 sm:backdrop-blur">
+            <input name="url" type="url" required placeholder="Paste a project's tokenomics or docs URL" className="flex-1 min-w-0 h-13 sm:h-12 px-4 text-[15px] outline-none placeholder:text-faint rounded-xl border border-line-strong bg-panel/90 focus:border-accent sm:rounded-none sm:border-0 sm:bg-transparent" aria-label="Project URL" />
+            <button className="h-13 sm:h-12 w-full sm:w-auto px-6 rounded-xl bg-accent text-white font-medium hover:brightness-110 transition whitespace-nowrap" type="submit">
               Check promises
             </button>
           </form>
@@ -159,7 +159,7 @@ const STEPS = [
 function Steps() {
   return (
     <section className="container-k py-14 md:py-24">
-      <Head n="01" name="How it works" title={<>Language in, <span className="serif italic font-normal">facts</span> out.</>} sub="The model reads. Code decides. No AI output is ever the final word on what happened on-chain." />
+      <Head n="01" name="How it works" title={<>Language in, <span className="serif italic font-normal">facts</span> out.</>} sub="The model reads. Code decides. No AI output is ever the final word on what happened onchain." />
       <div className="grid md:grid-cols-3 gap-4">
         {STEPS.map((s, i) => (
           <Reveal key={s.n} delay={i * 90} className="relative border border-line bg-panel p-6 pt-10 md:p-8 md:pt-12 md:min-h-[320px] flex flex-col group hover:border-line-strong transition-colors">

@@ -42,7 +42,7 @@ export function deriveStatus(
   const sym = spec.token.symbol ?? "tokens";
   switch (result.outcome) {
     case "unverifiable":
-      return { status: "unverifiable", final: false, reason: result.notes[0] ?? "the condition cannot be checked on-chain" };
+      return { status: "unverifiable", final: false, reason: result.notes[0] ?? "the condition cannot be checked onchain" };
     case "not_started":
       return { status: "pending", final: false, reason: "the commitment window has not started" };
     case "violated": {
