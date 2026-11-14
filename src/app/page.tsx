@@ -253,8 +253,8 @@ async function FeedTable() {
           </tr>
         </thead>
         <tbody>
-          {items.map((i) => (
-            <tr key={`${i.commitment_id}-${i.at.toISOString()}`}>
+          {items.map((i, n) => (
+            <tr key={`${i.commitment_id}-${i.at.toISOString()}`} className={n >= 5 ? "max-md:!hidden" : undefined}>
               <td className="w-48"><StatusChip status={i.to_status} final={i.final} /></td>
               <td>
                 <Link href={`/commitments/${i.commitment_id}`} className="u">{i.summary}</Link>
