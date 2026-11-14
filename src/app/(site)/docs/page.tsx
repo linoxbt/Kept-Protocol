@@ -67,7 +67,7 @@ export default function Docs() {
         </ul>
       </Section>
       <Section title="Endpoints">
-        <table className="data panel">
+        <table className="data stack panel">
           <tbody>{ENDPOINTS.map(([m, p, d]) => <tr key={p}><td className="mono text-xs w-14">{m}</td><td className="mono text-xs">{p}</td><td className="text-sm text-muted">{d}</td></tr>)}</tbody>
         </table>
       </Section>
