@@ -1,0 +1,11 @@
+# Long-running monitor (Railway, Fly, any container host). The web app runs next start separately.
+FROM node:22-slim
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts
+COPY tsconfig.json ./
+COPY src ./src
+COPY scripts ./scripts
+ENV NODE_ENV=production
+# Apply migrations, then tick every KEPT_TICK_SECONDS.
+CMD ["sh", "-c", "npx tsx scripts/migrate.ts && npx tsx scripts/worker.ts"]
