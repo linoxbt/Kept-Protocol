@@ -12,6 +12,7 @@ import { decodePaymentResponseHeader } from "@x402/core/http";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { db } from "@/db/client";
 import { env } from "./env";
+import { baseUrl } from "./http";
 import { newId } from "./ids";
 
 type Handler = (req: NextRequest) => Promise<NextResponse>;
@@ -27,11 +28,13 @@ export function paid(path: string, description: string, handler: Handler): Handl
         { status: 503, headers: { "content-type": "application/problem+json" } },
       );
     }
-    const cacheKey = [path, e.X402_PAY_TO, e.X402_NETWORK, e.X402_PRICE, e.X402_FACILITATOR_URL].join("|");
+    // Behind the edge proxy the request URL is the internal origin; advertise the public one.
+    const resource = `${baseUrl()}${path}`;
+    const cacheKey = [path, resource, e.X402_PAY_TO, e.X402_NETWORK, e.X402_PRICE, e.X402_FACILITATOR_URL].join("|");
     let wrapped = cache.get(cacheKey);
     if (!wrapped) {
       const server = new x402ResourceServer(new HTTPFacilitatorClient({ url: e.X402_FACILITATOR_URL })).register(e.X402_NETWORK as `${string}:${string}`, new ExactEvmScheme());
-      wrapped = withX402(handler, { [path]: { accepts: [{ scheme: "exact", price: e.X402_PRICE, network: e.X402_NETWORK as `${string}:${string}`, payTo: e.X402_PAY_TO }], description, mimeType: "application/json" } }, server);
+      wrapped = withX402(handler, { [path]: { accepts: [{ scheme: "exact", price: e.X402_PRICE, network: e.X402_NETWORK as `${string}:${string}`, payTo: e.X402_PAY_TO }], description, mimeType: "application/json", resource } }, server);
       cache.set(cacheKey, wrapped);
     }
     const res = await wrapped(req);
