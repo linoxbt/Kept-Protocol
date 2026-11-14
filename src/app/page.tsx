@@ -61,8 +61,8 @@ function Hero() {
         </Reveal>
         <Reveal delay={240} className="w-full">
           <form action="/try" method="get" className="mt-10 mx-auto w-full flex flex-col sm:flex-row gap-3 sm:gap-2 max-w-xl sm:p-1.5 sm:rounded-2xl sm:border sm:border-line-strong sm:bg-panel/80 sm:backdrop-blur">
-            <input name="url" type="url" required placeholder="Paste a project's tokenomics or docs URL" className="flex-1 min-w-0 h-13 sm:h-12 px-4 text-[15px] outline-none placeholder:text-faint rounded-xl border border-line-strong bg-panel/90 focus:border-accent sm:rounded-none sm:border-0 sm:bg-transparent" aria-label="Project URL" />
-            <button className="h-13 sm:h-12 w-full sm:w-auto px-6 rounded-xl bg-accent text-white font-medium hover:brightness-110 transition whitespace-nowrap" type="submit">
+            <input name="url" type="url" required placeholder="Paste a project's tokenomics or docs URL" className="w-full sm:w-auto sm:flex-1 min-w-0 h-[52px] sm:h-12 shrink-0 px-4 text-[15px] outline-none placeholder:text-faint rounded-xl border border-line-strong bg-panel/90 focus:border-accent sm:rounded-none sm:border-0 sm:bg-transparent" aria-label="Project URL" />
+            <button className="h-[52px] sm:h-12 shrink-0 w-full sm:w-auto px-6 rounded-xl bg-accent text-white font-medium hover:brightness-110 transition whitespace-nowrap" type="submit">
               Check promises
             </button>
           </form>
