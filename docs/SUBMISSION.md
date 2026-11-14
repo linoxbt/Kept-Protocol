@@ -2,7 +2,7 @@
 
 **Track:** Open Track
 **Live app:** https://kept-protocol.netlify.app
-**Demo video:** [`docs/kept-demo.mp4`](kept-demo.mp4)
+**Demo video:** [`docs/kept-film.mp4`](kept-film.mp4) (3:16, narrated motion film)
 **Repository:** https://github.com/linoxbt/Kept-Protocol (MIT)
 **Live demo record (Base mainnet):** https://kept-protocol.netlify.app/commitments/kc_01M7APJDJ4CX04CKD65F9NYQGK
 **Agent API (x402, Base mainnet USDC):** `GET https://kept-protocol.netlify.app/api/v1/agent/commitments?chain_id=8453&token=0x…`
@@ -107,7 +107,7 @@ method.
   verified live in production
 - [x] Public code repository (MIT)
 - [x] Demo link: https://kept-protocol.netlify.app
-- [x] Demo video: `docs/kept-demo.mp4` (2:39, captioned walkthrough of the live app; upload it to YouTube or Loom for the form's link)
+- [x] Demo video: `docs/kept-film.mp4` (3:16, 1080p narrated motion film; upload it to YouTube or Loom for the form's link)
 - [x] Short write-up (above)
 - [ ] Post on X and put the post's link in the form
 - [ ] Submit at https://openserv.typeform.com/submissions02 by 15 November 2026, 23:59 UTC

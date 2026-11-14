@@ -49,3 +49,4 @@ coverage/
 # local production secrets handoff (never commit)
 .secrets/
 netlify-edge/
+media-out/
