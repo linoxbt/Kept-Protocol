@@ -8,8 +8,8 @@ export function short(v: string, head = 6, tail = 4): string {
 
 export function Addr({ address, chainId = 8453, full = false }: { address: string; chainId?: number; full?: boolean }) {
   return (
-    <span className="mono inline-flex items-center gap-1.5 text-sm">
-      <a className="link" href={explorerAddress(chainId, address)} target="_blank" rel="noreferrer">
+    <span className={`mono inline-flex items-center gap-1.5 text-sm ${full ? "max-w-full min-w-0" : ""}`}>
+      <a className={`link ${full ? "break-all" : ""}`} href={explorerAddress(chainId, address)} target="_blank" rel="noreferrer">
         {full ? address : short(address)}
       </a>
       <CopyButton value={address} />

@@ -188,7 +188,7 @@ async function Commitment({ params }: { params: Promise<{ id: string }> }) {
       <div className="grid lg:grid-cols-2 gap-8">
         <Section title="Status history">
           <ul className="panel divide-y divide-line text-sm">
-            {d.changes.length === 0 ? <li className="p-3 text-muted">No checks yet.</li> : null}
+            {d.changes.length === 0 ? <li className="p-3 text-muted">{d.checks.length ? `No status changes yet: ${d.checks.length} check(s) so far, all ${d.commitment.status.replace("_", " ")}.` : "No checks yet."}</li> : null}
             {d.changes.map((c) => (
               <li key={c.id} className="p-3 flex gap-3 items-start">
                 <span className="mono text-xs text-muted w-36 shrink-0">{fmtDate(c.at, true)}</span>

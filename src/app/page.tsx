@@ -39,10 +39,10 @@ function Head({ n, name, title, sub }: { n: string; name: string; title: React.R
 
 function Hero() {
   return (
-    <section className="relative min-h-[100svh] flex flex-col overflow-hidden">
+    <section className="relative min-h-[92svh] md:min-h-[100svh] flex flex-col overflow-hidden">
       <BlockField />
       <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(60%_50%_at_50%_45%,transparent_0%,var(--color-bg)_85%)]" />
-      <div className="relative flex-1 flex flex-col items-center justify-center text-center px-5 pt-32 pb-16">
+      <div className="relative flex-1 flex flex-col items-center justify-center text-center px-5 pt-28 pb-12 md:pt-32 md:pb-16">
         <Reveal>
           <p className="inline-flex items-center gap-2 h-8 px-3.5 rounded-full border border-line-strong bg-panel/70 backdrop-blur text-[13px] text-muted">
             <span className="live-dot" /> Live on Base · built on SERV Reasoning
@@ -84,9 +84,9 @@ function Hero() {
 
 function Split() {
   return (
-    <section className="container-k py-24">
+    <section className="container-k py-14 md:py-24">
       <div className="grid lg:grid-cols-2 border border-line">
-        <Reveal className="relative bg-accent text-white p-10 md:p-14 min-h-[480px] flex flex-col justify-between">
+        <Reveal className="relative bg-accent text-white p-7 md:p-14 min-h-[340px] md:min-h-[480px] flex flex-col justify-between">
           <Corners className="text-white/60" />
           <p className="text-center text-[15px] text-white/80">The commitment stack</p>
           <div className="text-center">
@@ -106,7 +106,7 @@ function Split() {
             <span className="h-1 w-1 rounded-full bg-white/50" />
           </div>
         </Reveal>
-        <Reveal delay={120} className="relative dotgrid p-8 md:p-14 flex items-center justify-center min-h-[480px] border-t lg:border-t-0 lg:border-l border-line">
+        <Reveal delay={120} className="relative dotgrid p-5 md:p-14 flex items-center justify-center md:min-h-[480px] border-t lg:border-t-0 lg:border-l border-line">
           <Corners />
           <div className="w-full max-w-md proof !bg-bg">
             <div className="flex items-center justify-between mb-5">
@@ -158,11 +158,11 @@ const STEPS = [
 
 function Steps() {
   return (
-    <section className="container-k py-24">
+    <section className="container-k py-14 md:py-24">
       <Head n="01" name="How it works" title={<>Language in, <span className="serif italic font-normal">facts</span> out.</>} sub="The model reads. Code decides. No AI output is ever the final word on what happened on-chain." />
       <div className="grid md:grid-cols-3 gap-4">
         {STEPS.map((s, i) => (
-          <Reveal key={s.n} delay={i * 90} className="relative border border-line bg-panel p-8 pt-12 min-h-[320px] flex flex-col group hover:border-line-strong transition-colors">
+          <Reveal key={s.n} delay={i * 90} className="relative border border-line bg-panel p-6 pt-10 md:p-8 md:pt-12 md:min-h-[320px] flex flex-col group hover:border-line-strong transition-colors">
             <Corners />
             <p className="numeral text-[72px] text-line-strong group-hover:text-accent transition-colors">{s.n}</p>
             <h3 className="text-2xl tracking-[-0.03em] mt-8 mb-3">{s.t}</h3>
@@ -215,7 +215,7 @@ function Facts() {
 
 function LiveRecord() {
   return (
-    <section className="container-k py-24">
+    <section className="container-k py-14 md:py-24">
       <Head n="02" name="Live record" title={<>Every status change, <span className="serif italic font-normal">with its receipt.</span></>} />
       <Suspense fallback={<div className="skeleton h-72" />}>
         <FeedTable />
@@ -253,8 +253,8 @@ async function FeedTable() {
           </tr>
         </thead>
         <tbody>
-          {items.map((i) => (
-            <tr key={`${i.commitment_id}-${i.at.toISOString()}`}>
+          {items.map((i, n) => (
+            <tr key={`${i.commitment_id}-${i.at.toISOString()}`} className={n >= 5 ? "max-md:!hidden" : undefined}>
               <td className="w-48"><StatusChip status={i.to_status} final={i.final} /></td>
               <td>
                 <Link href={`/commitments/${i.commitment_id}`} className="u">{i.summary}</Link>
@@ -276,7 +276,7 @@ async function FeedTable() {
 
 function TheCatch() {
   return (
-    <section className="container-k py-24">
+    <section className="container-k py-14 md:py-24">
       <Head
         n="03"
         name="The catch"
@@ -319,11 +319,11 @@ function Pricing() {
     ["Data", "$2,000+", "per month", "Bulk API and historical exports", false],
   ];
   return (
-    <section className="container-k py-24">
+    <section className="container-k py-14 md:py-24">
       <Head n="04" name="Pricing" title={<>Priced for whoever <span className="serif italic font-normal">relies</span> on the promise.</>} sub="Starting points to test with the first launchpad pilot." />
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {tiers.map(([name, amount, unit, desc, featured], i) => (
-          <Reveal key={name} delay={i * 70} className={`relative rounded-2xl p-7 min-h-[280px] flex flex-col ${featured ? "bg-accent text-white" : "border border-line bg-panel"}`}>
+          <Reveal key={name} delay={i * 70} className={`relative rounded-2xl p-6 md:p-7 md:min-h-[280px] flex flex-col ${featured ? "bg-accent text-white" : "border border-line bg-panel"}`}>
             <p className={`label ${featured ? "!text-white/80" : ""}`}>{name}</p>
             <p className="numeral text-5xl mt-10">{amount}</p>
             <p className={`text-xs mt-3 ${featured ? "text-white/80" : "text-muted"}`}>{unit}</p>
@@ -337,7 +337,7 @@ function Pricing() {
 
 function Verify() {
   return (
-    <section className="container-k py-24">
+    <section className="container-k py-14 md:py-24">
       <Head n="05" name="Verify, don't trust" title={<>Every receipt checks out <span className="serif italic font-normal">without us.</span></>} sub="Recompute the hash, recover the signer, re-fetch the logs from your own RPC and rerun the same method version." />
       <Reveal className="max-w-3xl mx-auto">
         <div className="rounded-2xl border border-line-strong overflow-hidden bg-panel">
@@ -347,7 +347,7 @@ function Verify() {
             <span className="w-3 h-3 rounded-full bg-line-strong" />
             <span className="mono text-xs text-muted mx-auto pr-12">kept-verify</span>
           </div>
-          <pre className="mono text-[13px] leading-7 p-6 md:p-8 overflow-x-auto">
+          <pre className="mono text-[12px] md:text-[13px] leading-6 md:leading-7 p-5 md:p-8 whitespace-pre-wrap break-words md:whitespace-pre md:overflow-x-auto">
             <span className="text-faint">$ </span>npm run verify-receipt -- receipt.json{"\n"}
             <span className="text-verified">✓</span> sha256 of RFC 8785 canonical JSON matches{"\n"}
             <span className="text-verified">✓</span> EIP-191 signer matches /.well-known/agent-card.json{"\n"}
