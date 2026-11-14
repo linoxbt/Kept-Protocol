@@ -90,7 +90,7 @@ export function TryIt() {
           <textarea className="input mono h-40" required minLength={20} placeholder="Team tokens held at 0x… are locked for 12 months from March 1, 2026." value={text} onChange={(e) => setText(e.target.value)} />
         )}
         <button className="btn" disabled={busy}>{busy ? "reading…" : "Extract commitments"}</button>
-        {busy ? <p className="text-xs text-muted">SERV is locating promises, extracting fields with Shadow Agent validation, and classifying each one twice with Multipath. This takes 10–60 s.</p> : null}
+        {busy ? <p className="text-xs text-muted">SERV is locating promises, extracting fields with Shadow Agent validation, and classifying each one twice with Multipath. This usually takes 20 seconds to 3 minutes.</p> : null}
       </form>
       {error ? <p className="border border-breached text-breached p-3 text-sm mb-6">{error}</p> : null}
       {res ? <Results id={res.id} result={res.result} /> : null}
