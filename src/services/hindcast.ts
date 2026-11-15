@@ -4,7 +4,8 @@
  */
 import { getChain } from "@/chain";
 import { runHindcast, type HindcastResult } from "@/core/hindcast";
-import { METHOD_VERSIONS } from "@/core/methods";
+import { METHOD_VERSIONS, watchedAddresses } from "@/core/methods";
+import type { CommitmentSpec } from "@/core/types";
 import { db, type Sql } from "@/db/client";
 import { codeCommit } from "@/lib/env";
 import { newId } from "@/lib/ids";
@@ -14,6 +15,32 @@ import { insertReceipt } from "./receipts";
 import { Invalid, NotFound } from "./sources";
 
 export const MAX_HINDCAST_DAYS = 3 * 366;
+
+/**
+ * A replay may only use history Kept has actually scanned. Returns the latest time covered by the
+ * transfer cache for every watched address of every version; the replay stops there. Throws when
+ * the scan does not even reach back to the start of the range. Without this, an unscanned stretch
+ * would replay as "no transfers" (a lock looking Verified, final; a burn looking short) in a
+ * signed receipt.
+ */
+async function coveredUntil(specs: CommitmentSpec[], from: number, sql: Sql): Promise<number> {
+  let until = Number.POSITIVE_INFINITY;
+  for (const spec of specs) {
+    const chain = getChain(spec.chain_id).primary as ReturnType<typeof getChain>["primary"] & { blockTime?: (n: bigint) => Promise<number> };
+    const needFrom = await chain.blockAtOrBefore(from);
+    for (const addr of watchedAddresses(spec)) {
+      const [c] = await sql<{ scanned_from: string; scanned_to: string }[]>`
+        select scanned_from::text, scanned_to::text from scan_cursors
+        where chain_id = ${spec.chain_id} and token = ${spec.token.address.toLowerCase()} and from_addr = ${addr.toLowerCase()}`;
+      if (!c || BigInt(c.scanned_from) > needFrom + 1n) {
+        throw new Invalid(`chain evidence for ${addr} does not reach back to the start of the replay yet (${c ? `scanned from block ${c.scanned_from}` : "not scanned yet"}); run it once the backfill completes`);
+      }
+      const t = chain.blockTime ? await chain.blockTime(BigInt(c.scanned_to)) : (await chain.finalizedBlock()).timestamp;
+      until = Math.min(until, t);
+    }
+  }
+  return until;
+}
 
 export interface HindcastRun {
   id: string;
@@ -38,11 +65,15 @@ export async function runHindcastFor(
   const ends = specs.map((s) => Date.parse(s.window.end));
   const from = Math.floor((opts.from ? Date.parse(opts.from) : Math.min(...starts)) / 1000);
   const toCap = Math.floor(Date.now() / 1000);
-  const to = Math.min(Math.floor((opts.to ? Date.parse(opts.to) : Math.max(...ends) + 86_400 * 3) / 1000), toCap);
+  let to = Math.min(Math.floor((opts.to ? Date.parse(opts.to) : Math.max(...ends) + 86_400 * 3) / 1000), toCap);
   if (!(to > from)) throw new Invalid("the range is empty");
   if ((to - from) / 86_400 > MAX_HINDCAST_DAYS) throw new Invalid(`ranges over ${MAX_HINDCAST_DAYS} days are not supported; pick a shorter range`);
 
   const transfers = await evidenceFor(specs, sql, opts.refresh ?? true);
+  // Stop where the scanned evidence stops (never replay unscanned blocks as "nothing happened").
+  const covered = await coveredUntil(specs, from, sql);
+  if (covered < to) to = Math.floor(covered);
+  if (!(to > from)) throw new Invalid("chain evidence for this commitment has not been scanned past the start of the replay yet");
   const vestingSpec = specs.find((s) => s.vesting);
   const vesting = vestingSpec ? await getChain(vestingSpec.chain_id).primary.readVesting(vestingSpec.vesting!.contract as `0x${string}`, vestingSpec.token.address as `0x${string}`).catch(() => null) : null;
   const result = runHindcast(
@@ -96,6 +127,7 @@ export async function runHindcastFor(
         "Replay of historical evidence; not a live check.",
         "Attribution is time-bound: an address declared now says nothing certain about who controlled it earlier.",
         "Source history only includes versions Kept captured.",
+        "Replayed statuses come from the primary provider's finalized logs; they were not re-confirmed on a second provider.",
       ],
       replay: summary,
     });

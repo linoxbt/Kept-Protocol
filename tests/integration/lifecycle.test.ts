@@ -22,6 +22,7 @@ import { meterFor, reserveServCall, setServClient } from "@/services/serv";
 import { addSource, captureForSource, createProject, storeSnapshot } from "@/services/sources";
 import { runCheck } from "@/services/verify";
 import { pendingRoot, withSessionLock } from "@/services/anchor";
+import { ensureShowcase } from "@/services/showcase";
 import { claimDue } from "@/services/monitor";
 import { migrate } from "../../scripts/migrate";
 import { runMethod } from "@/core/methods";
@@ -447,4 +448,13 @@ describe.skipIf(!DB_UP)("Kept lifecycle", () => {
     expect(after.receiptIds).not.toContain(before.receiptIds[0]);
     await sql`delete from anchor_attempts where id = 'ka_test'`;
   });
+
+  it("stores one offline Grifter run for the public page when none exists, then never repeats", async () => {
+    await sql`truncate grifter_runs`;
+    const r = await ensureShowcase(sql);
+    expect(r?.grifter).toMatch(/^kg_/);
+    const [{ n }] = await sql<{ n: number }[]>`select count(*)::int as n from grifter_runs`;
+    expect(n).toBe(1);
+    expect(await ensureShowcase(sql)).toBeUndefined();
+  }, 60_000);
 });

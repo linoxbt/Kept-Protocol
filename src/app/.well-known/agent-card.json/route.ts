@@ -21,7 +21,8 @@ export async function GET(req: Request) {
       { name: "openapi", endpoint: `${base}/api/v1/openapi.json` },
     ],
     signer: { scheme: "eip191", address: getSigner().address, signs: ["receipts", "Kept-Signature response header"] },
-    supportedTrust: ["reputation", "crypto-economic"],
+    // No supportedTrust: Kept has no reputation registry, stake or TEE attestation; its trust model is
+    // the signed, independently re-verifiable receipt named in `signer` above.
   };
   return Response.json(body, { headers: { "cache-control": "public, max-age=300" } });
 }
