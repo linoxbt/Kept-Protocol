@@ -1,5 +1,7 @@
 import { connection } from "next/server";
 import Link from "next/link";
+import { notFound } from "next/navigation";
+import { db } from "@/db/client";
 import { Suspense } from "react";
 import { HindcastLanes } from "@/components/lanes";
 import { ActionButton } from "@/components/admin-actions";
@@ -21,14 +23,15 @@ export default function HindcastPage({ params }: { params: Promise<{ id: string 
 async function Hindcast({ params }: { params: Promise<{ id: string }> }) {
   await connection();
   const { id } = await params;
-  const [run, admin] = await Promise.all([latestHindcast(id), isAdminSession()]);
+  const [[exists], run, admin] = await Promise.all([db()<{ id: string }[]>`select id from commitments where id = ${id}`, latestHindcast(id), isAdminSession()]);
+  if (!exists) notFound();
   return (
     <div>
       <Link href={`/commitments/${id}`} className="label u !text-muted hover:!text-ink">← commitment</Link>
       <h1 className="title mt-6 mb-4">Hindcast</h1>
       <p className="text-sm text-muted mb-6 max-w-3xl">
         Under each version of the promise, what would Kept have shown on each date, and what changed it? Same evidence, same code. A replay never implies the
-        outcome was predictable, and a gap in evidence is shown as a gap.
+        outcome was predictable. It uses the chain evidence Kept has collected so far for this commitment.
       </p>
       {admin ? <div className="mb-6"><ActionButton endpoint="/api/v1/hindcast" body={{ commitment_id: id }} label="Run a new replay" /></div> : null}
       {!run ? (
