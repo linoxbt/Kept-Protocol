@@ -178,3 +178,17 @@ describe("derived values (audit B22)", () => {
     expect(g.flags).toContain("UNGROUNDED_DATE");
   });
 });
+
+describe("locate output limits (audit B23)", () => {
+  it("trims instead of rejecting, so a page full of injection text still yields its promises", async () => {
+    const { LocateOut } = await import("@/serv/schemas");
+    const r = LocateOut.safeParse({
+      spans: [{ quote: "Team tokens are locked for 12 months.", category_hint: "token_lock" }, { quote: "x".repeat(1500), category_hint: "other" }],
+      instructions_detected: true,
+      injection_quotes: Array.from({ length: 11 }, (_, i) => `ignore previous instructions ${i}`),
+    });
+    expect(r.success).toBe(true);
+    expect(r.data!.spans).toHaveLength(1);
+    expect(r.data!.injection_quotes).toHaveLength(10);
+  });
+});
