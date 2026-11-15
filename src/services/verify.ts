@@ -12,11 +12,11 @@ import { codeCommit } from "@/lib/env";
 import { newId } from "@/lib/ids";
 import { isDevSigner, getSigner } from "@/receipts/signer";
 import { canonicalJson, sha256Hex, type ReceiptBody } from "@/receipts/receipt";
-import { loadCommitment } from "./commitments";
+import { listVersions, loadCommitment } from "./commitments";
 import { activeDispute } from "./disputes";
 import { startJob, type Defer } from "./jobs";
 import { NotFound } from "./sources";
-import { collectEvidence, watchedAddresses, type CollectedEvidence } from "./evidence";
+import { cachedTransfers, collectEvidence, watchedAddresses, type CollectedEvidence } from "./evidence";
 import { insertReceipt, type StoredReceipt } from "./receipts";
 
 export const METHOD_LIMITATIONS: Record<string, string[]> = {
@@ -216,7 +216,12 @@ export async function runCheck(commitmentId: string, opts: { sql?: Sql; trigger?
   const { result, collected, confirmation } = evaluation;
   // An accepted dispute overlays the status until it is resolved; the mechanical result stays in the reason.
   const dispute = await activeDispute(commitmentId, sql);
-  const standing = dispute ? null : await standingBreach(commitmentId, version, sql);
+  const stored = dispute ? null : await standingBreach(commitmentId, version, sql);
+  // No recorded breach under an earlier version: check the evidence itself, so a violation that was
+  // still At risk (awaiting finality or the second provider) when the promise was revised is not
+  // erased by the revision.
+  const earlier = dispute || stored ? null : await earlierVersionViolation(commitmentId, version, evaluation.collected, sql);
+  const standing = stored ?? (earlier?.kind === "breach" ? earlier : null);
   const decision: StatusDecision = dispute
     ? { status: "disputed", final: false, reason: `Under review after a dispute (${dispute.id}). Mechanical result: ${evaluation.decision.reason}` }
     : standing
@@ -225,7 +230,9 @@ export async function runCheck(commitmentId: string, opts: { sql?: Sql; trigger?
           final: true,
           reason: `Breached under v${standing.version}: ${standing.reason.replace(/^Condition not met:\s*/, "")}. The promise was revised afterwards (v${version.version}); a later revision does not undo a breach. Under v${version.version} alone: ${evaluation.decision.reason}`,
         }
-      : evaluation.decision;
+      : earlier?.kind === "pending"
+        ? { status: "at_risk", final: false, reason: `${earlier.reason}. The promise was revised afterwards (v${version.version}); a later revision does not undo a breach. Under v${version.version} alone: ${evaluation.decision.reason}` }
+        : evaluation.decision;
   const signer = getSigner();
   const limitations = [...(METHOD_LIMITATIONS[spec.method_id] ?? []), ...result.notes];
   if (!collected.complete) limitations.push(`Evidence backfill incomplete: scanned to block ${collected.scannedTo}.`);
@@ -350,6 +357,50 @@ export async function standingBreach(
     order by k.finished_at
     limit 1`;
   return b ? { version: b.version, reason: b.reason ?? "the condition was not met", receiptId: b.receipt_id } : null;
+}
+
+/** Facts about earlier versions only change from "pending" to "breach", so a found breach is cached. */
+const earlierBreachCache = new Map<string, { kind: "breach"; version: number; reason: string; receiptId: null }>();
+
+/**
+ * Evaluates each earlier version (since the last correction) over the finalized evidence from
+ * before the version that replaced it was published. A violation there that the attribution rules
+ * allow to be a breach, confirmed on the second provider, stands whatever later versions say; one
+ * not yet confirmed keeps the record At risk. Locks and vesting only (a burn shortfall is decided
+ * at the window's end, which a revision before then cannot have hidden).
+ */
+export async function earlierVersionViolation(
+  commitmentId: string,
+  current: { version: number; change_kind: string },
+  collected: CollectedEvidence,
+  sql: Sql = db(),
+): Promise<{ kind: "breach"; version: number; reason: string; receiptId: null } | { kind: "pending"; version: number; reason: string } | null> {
+  if (current.change_kind === "correction" || current.version <= 1) return null;
+  const cacheKey = `${commitmentId}:${current.version}`;
+  const cached = earlierBreachCache.get(cacheKey);
+  if (cached) return cached;
+  const versions = await listVersions(commitmentId, sql);
+  const lastCorrection = Math.max(0, ...versions.filter((v) => v.change_kind === "correction" && v.version <= current.version).map((v) => v.version));
+  for (const v of versions) {
+    if (v.version >= current.version || v.version < lastCorrection) continue;
+    if (v.spec.method_id === "burn_v1") continue;
+    const next = versions.find((x) => x.version === v.version + 1);
+    if (!next) continue;
+    const until = Math.floor(next.published_at.getTime() / 1000);
+    const transfers = (await cachedTransfers(sql, v.spec.chain_id, v.spec.token.address, watchedAddresses(v.spec), 0n, 2n ** 63n)).filter((t) => t.blockTime < until);
+    const r = runMethod(v.spec, { ...collected.evidence, transfers, unfinalizedTransfers: [], asOf: until });
+    if (r.outcome !== "violated") continue;
+    const ifConfirmed = deriveStatus(v.spec, r, "confirmed");
+    if (ifConfirmed.status !== "breached") continue; // attribution cannot support a breach
+    const conf = await confirmViolation(v.spec, r, collected, getChain(v.spec.chain_id).confirm, sql);
+    if (conf.confirmation === "confirmed") {
+      const found = { kind: "breach" as const, version: v.version, reason: ifConfirmed.reason, receiptId: null };
+      earlierBreachCache.set(cacheKey, found);
+      return found;
+    }
+    return { kind: "pending", version: v.version, reason: `A violation under v${v.version} awaits confirmation: ${ifConfirmed.reason.replace(/^Condition not met:\s*/, "")}` };
+  }
+  return null;
 }
 
 /** Takes the commitment's check lease (the same one the worker uses), so a manual check never runs alongside a scheduled one. */

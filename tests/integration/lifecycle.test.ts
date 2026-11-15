@@ -31,7 +31,8 @@ import { createSession, revokeSessions, validSession, verifyCredential } from "@
 import { json, route } from "@/lib/http";
 import { decideDispute, listDisputes, openDispute } from "@/services/disputes";
 import { failStaleJobs, getJob, startJob, withHeartbeat } from "@/services/jobs";
-import { confirmViolation } from "@/services/verify";
+import { confirmViolation, earlierVersionViolation, evaluate } from "@/services/verify";
+import { loadCommitment } from "@/services/commitments";
 import { bootstrapSecrets, resetBootstrapForTests, sealValue } from "@/lib/secrets";
 
 const URL = process.env.DATABASE_URL_TEST ?? "postgres://kept@127.0.0.1:5433/kept_test";
@@ -362,6 +363,15 @@ describe.skipIf(!DB_UP)("Kept lifecycle", () => {
       Object.assign(process.env, saved);
       resetBootstrapForTests();
     }
+  });
+
+  it("finds a breach under an earlier version from the evidence itself, not only from a recorded status (audit B6)", async () => {
+    const bundle = (await loadCommitment(commitmentId, sql))!;
+    expect(bundle.version.version).toBeGreaterThan(1);
+    const ev = await evaluate(bundle.version.spec, sql);
+    const r = await earlierVersionViolation(commitmentId, bundle.version, ev.collected, sql);
+    expect(r).toMatchObject({ kind: "breach", version: 1 });
+    expect((r as { reason: string }).reason).toMatch(/4,000,000 XYZ left/);
   });
 
   it("keeps a breach standing after the project relaxes the promise", async () => {

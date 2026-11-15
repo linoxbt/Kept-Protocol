@@ -55,3 +55,18 @@ describe("Hindcast", () => {
     expect(res.divergences.length).toBeGreaterThan(0);
   });
 });
+
+describe("Precedent sees every relaxation (audit B4)", () => {
+  it("treats a new internal address or a downgraded attribution as a policy change", () => {
+    const v1 = lockSpec();
+    const widened = lockSpec({ internal_addresses: [BUYER] });
+    const internal = fieldDiff(v1, widened).find((c) => c.field === "internal_addresses");
+    expect(internal).toMatchObject({ policy: true, from: null, to: BUYER.toLowerCase() });
+    expect(classifyChange(v1, widened)).toBe("policy_change");
+
+    const downgraded = lockSpec({ subjects: v1.subjects.map((s) => ({ ...s, attribution: { level: "unconfirmed" as const, evidence: null, confirmed_by: null } })) });
+    const attr = fieldDiff(v1, downgraded).find((c) => c.field === "subjects.attribution");
+    expect(attr?.policy).toBe(true);
+    expect(attr?.to).toMatch(/=unconfirmed$/);
+  });
+});

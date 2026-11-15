@@ -14,9 +14,17 @@ export const POLICY_FIELDS = [
   "token.address",
   "comparator",
   "threshold",
+  "threshold_base_units",
+  "token.decimals",
+  "chain_id",
   "window.start",
   "window.end",
   "subjects",
+  // Who counts as the same entity, and how firmly each subject is attributed, change the outcome
+  // as surely as the threshold: adding the recipient of an outflow to internal_addresses, or
+  // downgrading a subject to unconfirmed, can erase a breach without touching the number.
+  "subjects.attribution",
+  "internal_addresses",
   "vesting.start",
   "vesting.cliff_seconds",
   "vesting.duration_seconds",
@@ -36,6 +44,12 @@ export interface FieldChange {
 function get(spec: CommitmentSpec, path: string): string | null {
   if (path === "subjects") {
     return spec.subjects.map((s) => s.address.toLowerCase()).sort().join(",") || null;
+  }
+  if (path === "subjects.attribution") {
+    return spec.subjects.map((s) => `${s.address.toLowerCase()}=${s.attribution.level}`).sort().join(",") || null;
+  }
+  if (path === "internal_addresses") {
+    return (spec.internal_addresses ?? []).map((a) => a.toLowerCase()).sort().join(",") || null;
   }
   if (path === "burn.burn_addresses") {
     return spec.burn ? spec.burn.burn_addresses.map((a) => a.toLowerCase()).sort().join(",") : null;
