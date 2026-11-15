@@ -161,14 +161,92 @@ export function captureText(text: string): Captured {
 
 const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", ndash: "–", mdash: "—", rsquo: "’", lsquo: "‘", rdquo: "”", ldquo: "“", hellip: "…" };
 
+/** Elements whose whole content is dropped, matched case-insensitively by prefix like the original regex. */
+const RAW_ELEMENTS = ["script", "style", "noscript", "template", "svg", "iframe", "head"];
+
+/** ASCII-only lower-casing keeps every index aligned with the original string. */
+function asciiLower(s: string): string {
+  return s.replace(/[A-Z]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 32));
+}
+
+/** Same result as s.replace(/<!--[\s\S]*?-->/g, " "), in linear time on unclosed comments. */
+function stripComments(s: string): string {
+  let out = "";
+  let last = 0;
+  let i = s.indexOf("<!--");
+  while (i !== -1) {
+    const close = s.indexOf("-->", i + 4);
+    if (close === -1) break; // no later "<!--" can close either
+    out += s.slice(last, i) + " ";
+    last = close + 3;
+    i = s.indexOf("<!--", last);
+  }
+  return out + s.slice(last);
+}
+
+/**
+ * Same result as s.replace(/<(script|style|…|head)[\s\S]*?<\/\1>/gi, " "), in linear time: the
+ * position of the next closing tag per element is cached, so an unclosed tag is never rescanned.
+ */
+function stripRawElements(s: string): string {
+  const lower = asciiLower(s);
+  const nextClose = new Map<string, number>();
+  let out = "";
+  let last = 0;
+  let i = lower.indexOf("<");
+  while (i !== -1) {
+    let end = -1;
+    const first = lower.charCodeAt(i + 1);
+    // s(cript|tyle|vg), n(oscript), t(emplate), i(frame), h(ead): skip the name tests otherwise.
+    if (first !== 115 && first !== 110 && first !== 116 && first !== 105 && first !== 104) {
+      i = lower.indexOf("<", i + 1);
+      continue;
+    }
+    for (const name of RAW_ELEMENTS) {
+      if (!lower.startsWith(name, i + 1)) continue;
+      const from = i + 1 + name.length;
+      const tag = `</${name}>`;
+      let c = nextClose.get(name);
+      if (c === undefined || (c !== -1 && c < from)) {
+        c = lower.indexOf(tag, from);
+        nextClose.set(name, c);
+      }
+      if (c !== -1) end = c + tag.length;
+      break; // at most one element name can match at this position
+    }
+    if (end === -1) {
+      i = lower.indexOf("<", i + 1);
+      continue;
+    }
+    out += s.slice(last, i) + " ";
+    last = end;
+    i = lower.indexOf("<", end);
+  }
+  return out + s.slice(last);
+}
+
+/**
+ * Apply a regex whose every match ends in ">" only to the text up to the last ">". No match can
+ * start after it, and running the regex there would rescan the rest of the string from every "<"
+ * (quadratic on a page of unclosed tags).
+ */
+function replaceBeforeLastGt(s: string, re: RegExp, by: string): string {
+  const gt = s.lastIndexOf(">");
+  if (gt === -1) return s;
+  return s.slice(0, gt + 1).replace(re, by) + s.slice(gt + 1);
+}
+
+/**
+ * HTML to plain text. Linear in the input size, including on hostile pages built from thousands of
+ * unclosed tags or comments (each step of the original regex chain was quadratic there, so one
+ * 10 MB page could block the process for hours). The output is identical to the original chain.
+ */
 export function htmlToText(html: string): string {
-  let s = html
-    .replace(/<!--[\s\S]*?-->/g, " ")
-    .replace(/<(script|style|noscript|template|svg|iframe|head)[\s\S]*?<\/\1>/gi, " ")
+  let s = stripRawElements(stripComments(html))
     .replace(/<(br|hr)\s*\/?>/gi, "\n")
-    .replace(/<\/(p|div|section|article|li|ul|ol|h[1-6]|tr|table|blockquote|pre|header|footer|main|nav)>/gi, "\n")
-    .replace(/<li[^>]*>/gi, "\n- ")
-    .replace(/<[^>]+>/g, " ");
+    .replace(/<\/(p|div|section|article|li|ul|ol|h[1-6]|tr|table|blockquote|pre|header|footer|main|nav)>/gi, "\n");
+  s = replaceBeforeLastGt(s, /<li[^>]*>/gi, "\n- ");
+  s = replaceBeforeLastGt(s, /<[^>]+>/g, " ");
   s = s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e: string) => {
     if (e[0] === "#") {
       const code = e[1].toLowerCase() === "x" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
