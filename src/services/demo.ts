@@ -21,7 +21,7 @@ import { db, type Sql } from "@/db/client";
 import { env } from "@/lib/env";
 import { openValue, sealValue } from "@/lib/secrets";
 import artifact from "@/demo/kept-demo-token.json";
-import { anchorChainId } from "./anchor";
+import { anchorChainId, withSessionLock } from "./anchor";
 import { confirmDraft, createManualDraft } from "./extractions";
 import { confirmVersion } from "./precedent";
 import { addSource, captureForSource, createProject, getProjectBySlugOrId, storeSnapshot, type SourceRow } from "./sources";
@@ -97,13 +97,8 @@ export async function advanceDemo(sql: Sql = db()): Promise<{ stage: string; det
     if (!key) return { stage: "waiting", detail: "no operator key" };
     const state = await readState(sql);
     if (state?.stage === "done") return { stage: "done" };
-    const [lock] = await sql<{ ok: boolean }[]>`select pg_try_advisory_lock(${DEMO_LOCK}) as ok`;
-    if (!lock.ok) return { stage: state?.stage ?? "none", detail: "another process is running the demo" };
-    try {
-      return await step(sql, key, state);
-    } finally {
-      await sql`select pg_advisory_unlock(${DEMO_LOCK})`;
-    }
+    const r = await withSessionLock(sql, DEMO_LOCK, () => step(sql, key, state));
+    return r.ran ? r.value : { stage: state?.stage ?? "none", detail: "another process is running the demo" };
   } catch (e) {
     return { stage: "error", detail: e instanceof Error ? e.message.slice(0, 300) : String(e) };
   }

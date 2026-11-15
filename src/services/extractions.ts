@@ -252,6 +252,8 @@ export async function confirmDraft(req: ConfirmRequest, sql: Sql = db()): Promis
   const { spec, extraction, snapshot, project } = prepared;
   if (extraction.preview || !snapshot || !project) throw new Invalid("previews cannot be confirmed; capture the source on a project first");
   if (extraction.target_commitment_id) throw new Invalid("this extraction proposes a new version; confirm it as a version instead");
+  const [already] = await sql<{ commitment_id: string }[]>`select commitment_id from commitment_versions where extraction_id = ${extraction.id} and draft_index = ${req.draftIndex} limit 1`;
+  if (already) throw new Conflict(`this draft is already confirmed as ${already.commitment_id}`);
   const commitmentId = newId("kc");
   const versionId = newId("kv");
   await sql.begin(async (tx) => {

@@ -21,7 +21,7 @@ import { getReceipt } from "@/services/receipts";
 import { meterFor, reserveServCall, setServClient } from "@/services/serv";
 import { addSource, captureForSource, createProject, storeSnapshot } from "@/services/sources";
 import { runCheck } from "@/services/verify";
-import { pendingRoot } from "@/services/anchor";
+import { pendingRoot, withSessionLock } from "@/services/anchor";
 import { claimDue } from "@/services/monitor";
 import { migrate } from "../../scripts/migrate";
 import { runMethod } from "@/core/methods";
@@ -180,6 +180,8 @@ describe.skipIf(!DB_UP)("Kept lifecycle", () => {
 
     const { commitmentId: id } = await confirmDraft({ extractionId: ex.id, draftIndex: 0, reviewer: "test-reviewer" }, sql);
     commitmentId = id;
+    // A double submit cannot create a second monitored commitment.
+    await expect(confirmDraft({ extractionId: ex.id, draftIndex: 0, reviewer: "test-reviewer" }, sql)).rejects.toThrow(/already confirmed as kc_/);
     const [v] = await sql`select spec from commitment_versions where commitment_id = ${id}`;
     expect(v.spec.window.end).toBe("2026-03-01T00:00:00.000Z");
     expect(v.spec.subjects[0].attribution.level).toBe("declared_by_project");
@@ -425,4 +427,24 @@ describe.skipIf(!DB_UP)("Kept lifecycle", () => {
     expect(checked.length).toBe(10);
     expect(results.filter((x) => x.status === "rejected").every((x) => /too many failed/.test(String((x as PromiseRejectedResult).reason)))).toBe(true);
   }, 30_000);
+
+  it("anchoring: one run at a time across connections, and receipts in a pending attempt are not offered again", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const first = withSessionLock(sql, 99_001, () => gate.then(() => "first"));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(await withSessionLock(sql, 99_001, async () => "second")).toEqual({ ran: false });
+    release();
+    expect(await first).toEqual({ ran: true, value: "first" });
+    // The lock was released on the same connection that took it, so it is free again.
+    expect(await withSessionLock(sql, 99_001, async () => "third")).toEqual({ ran: true, value: "third" });
+
+    const before = await pendingRoot(sql);
+    expect(before.count).toBeGreaterThan(1);
+    await sql`insert into anchor_attempts (id, chain_id, merkle_root, receipt_ids, tx_hash) values ('ka_test', 8453, 'r', ${before.receiptIds.slice(0, 1)}, '0xabc')`;
+    const after = await pendingRoot(sql);
+    expect(after.count).toBe(before.count - 1);
+    expect(after.receiptIds).not.toContain(before.receiptIds[0]);
+    await sql`delete from anchor_attempts where id = 'ka_test'`;
+  });
 });
