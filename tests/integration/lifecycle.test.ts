@@ -12,15 +12,17 @@ import { resetEnvCache } from "@/lib/env";
 import { checkReceipt } from "@/receipts/receipt";
 import { verifyProof } from "@/receipts/merkle";
 import { merkleProof } from "@/receipts/merkle";
-import { FixtureServClient, type ServRequest } from "@/serv/client";
+import { FixtureServClient, worstCaseCostUsd, type ServRequest } from "@/serv/client";
+import { PROMPTS } from "@/serv/prompts";
 import { confirmDraft, createManualDraft, runAndStoreExtraction } from "@/services/extractions";
 import { confirmVersion, diffVersions, recaptureSource } from "@/services/precedent";
 import { runHindcastFor } from "@/services/hindcast";
 import { getReceipt } from "@/services/receipts";
-import { setServClient } from "@/services/serv";
+import { meterFor, reserveServCall, setServClient } from "@/services/serv";
 import { addSource, captureForSource, createProject, storeSnapshot } from "@/services/sources";
 import { runCheck } from "@/services/verify";
-import { pendingRoot } from "@/services/anchor";
+import { pendingRoot, withSessionLock } from "@/services/anchor";
+import { ensureShowcase } from "@/services/showcase";
 import { claimDue } from "@/services/monitor";
 import { migrate } from "../../scripts/migrate";
 import { runMethod } from "@/core/methods";
@@ -28,8 +30,9 @@ import type { CommitmentSpec, Evidence } from "@/core/types";
 import { createSession, revokeSessions, validSession, verifyCredential } from "@/lib/auth";
 import { json, route } from "@/lib/http";
 import { decideDispute, listDisputes, openDispute } from "@/services/disputes";
-import { getJob, startJob } from "@/services/jobs";
-import { confirmViolation } from "@/services/verify";
+import { failStaleJobs, getJob, startJob, withHeartbeat } from "@/services/jobs";
+import { confirmViolation, earlierVersionViolation, evaluate } from "@/services/verify";
+import { loadCommitment } from "@/services/commitments";
 import { bootstrapSecrets, resetBootstrapForTests, sealValue } from "@/lib/secrets";
 
 const URL = process.env.DATABASE_URL_TEST ?? "postgres://kept@127.0.0.1:5433/kept_test";
@@ -179,6 +182,8 @@ describe.skipIf(!DB_UP)("Kept lifecycle", () => {
 
     const { commitmentId: id } = await confirmDraft({ extractionId: ex.id, draftIndex: 0, reviewer: "test-reviewer" }, sql);
     commitmentId = id;
+    // A double submit cannot create a second monitored commitment.
+    await expect(confirmDraft({ extractionId: ex.id, draftIndex: 0, reviewer: "test-reviewer" }, sql)).rejects.toThrow(/already confirmed as kc_/);
     const [v] = await sql`select spec from commitment_versions where commitment_id = ${id}`;
     expect(v.spec.window.end).toBe("2026-03-01T00:00:00.000Z");
     expect(v.spec.subjects[0].attribution.level).toBe("declared_by_project");
@@ -360,10 +365,130 @@ describe.skipIf(!DB_UP)("Kept lifecycle", () => {
     }
   });
 
+  it("finds a breach under an earlier version from the evidence itself, not only from a recorded status (audit B6)", async () => {
+    const bundle = (await loadCommitment(commitmentId, sql))!;
+    expect(bundle.version.version).toBeGreaterThan(1);
+    const ev = await evaluate(bundle.version.spec, sql);
+    const r = await earlierVersionViolation(commitmentId, bundle.version, ev.collected, sql);
+    expect(r).toMatchObject({ kind: "breach", version: 1 });
+    expect((r as { reason: string }).reason).toMatch(/4,000,000 XYZ left/);
+  });
+
   it("keeps a breach standing after the project relaxes the promise", async () => {
     const r = await runCheck(commitmentId, { sql, trigger: "test" });
     expect(r.decision).toMatchObject({ status: "breached", final: true });
     expect(r.decision.reason).toMatch(/^Breached under v1: 4,000,000 XYZ left/);
     expect(r.decision.reason).toMatch(/revised afterwards \(v2\); a later revision does not undo a breach/);
   });
+
+  it("holds SERV budget atomically: concurrent reservations never exceed the daily budget", async () => {
+    const saved = process.env.SERV_DAILY_BUDGET_USD;
+    try {
+      await sql`truncate serv_budget_holds`;
+      await sql`update serv_calls set created_at = now() - interval '2 days'`;
+      const req = { callSite: "extract", model: "gpt-5.4-mini-serv-kronos", prompt: PROMPTS.extract, user: "x".repeat(3000), jsonSchema: { name: "x", strict: true, schema: {} }, servTools: [{ kind: "shadow_agent", hint: "h", maxIterations: 2 }], maxTokens: 2000 } as ServRequest;
+      const each = worstCaseCostUsd(req)!;
+      expect(each).toBeGreaterThan(0);
+      // Room for exactly 7 calls; 40 race for it.
+      process.env.SERV_DAILY_BUDGET_USD = String(each * 7.5);
+      resetEnvCache();
+      const results = await Promise.allSettled(Array.from({ length: 40 }, () => reserveServCall(req, sql)));
+      const held = results.filter((r) => r.status === "fulfilled");
+      expect(held).toHaveLength(7);
+      expect(results.filter((r) => r.status === "rejected").every((r) => /daily SERV budget reached/.test(String((r as PromiseRejectedResult).reason)))).toBe(true);
+
+      // Metering a failed call releases its hold but charges the worst case (it may have been billed).
+      const hold = (held[0] as PromiseFulfilledResult<{ id: string; amountUsd: number }>).value;
+      await meterFor(null, sql)({ callSite: "extract", model: req.model, promptVersion: "v", promptSha256: "s", response: null, outcome: "error", error: "timeout", servTools: 1, hold });
+      const [{ n }] = await sql<{ n: number }[]>`select count(*)::int as n from serv_budget_holds`;
+      expect(n).toBe(6);
+      const [row] = await sql<{ est_cost_usd: string }[]>`select est_cost_usd from serv_calls where error = 'timeout' order by created_at desc limit 1`;
+      expect(Number(row.est_cost_usd)).toBeCloseTo(each, 5);
+
+      // A model without a known price is refused instead of being counted as free.
+      await expect(reserveServCall({ ...req, model: "gpt-9-unknown" }, sql)).rejects.toThrow(/no price is configured/);
+    } finally {
+      if (saved === undefined) delete process.env.SERV_DAILY_BUDGET_USD;
+      else process.env.SERV_DAILY_BUDGET_USD = saved;
+      resetEnvCache();
+      await sql`truncate serv_budget_holds`;
+    }
+  });
+
+  it("fails orphaned jobs and extractions by heartbeat, never live ones", async () => {
+    await sql`insert into jobs (id, kind, status, heartbeat_at, created_at) values
+      ('kj_orphan', 'verify', 'running', now() - interval '10 minutes', now() - interval '10 minutes'),
+      ('kj_slow', 'grifter', 'running', now() - interval '5 seconds', now() - interval '45 minutes')`;
+    await sql`insert into extractions (id, content_sha256, preview, status, heartbeat_at, preview_text) values
+      ('kx_orphan', 'x', true, 'running', now() - interval '10 minutes', 'text'),
+      ('kx_live', 'x', true, 'running', now(), 'text')`;
+    await failStaleJobs(sql);
+    const st = Object.fromEntries((await sql<{ id: string; status: string }[]>`
+      select id, status from jobs where id in ('kj_orphan', 'kj_slow') union all
+      select id, status from extractions where id in ('kx_orphan', 'kx_live')`).map((r) => [r.id, r.status]));
+    expect(st).toEqual({ kj_orphan: "failed", kj_slow: "running", kx_orphan: "failed", kx_live: "running" });
+    // The heartbeat helper returns the work's result and stops beating afterwards.
+    expect(await withHeartbeat("jobs", "kj_slow", sql, async () => 42)).toBe(42);
+  });
+
+  it("counts sign-in attempts atomically: a parallel burst gets at most the per-IP budget of checks", async () => {
+    const r = () => new Request("https://kept.test/api", { headers: { "x-real-ip": "198.51.100.23" } });
+    const results = await Promise.allSettled(Array.from({ length: 30 }, (_, i) => verifyCredential(r(), `burst-${i}`)));
+    const checked = results.filter((x) => x.status === "fulfilled");
+    expect(checked.length).toBe(10);
+    expect(results.filter((x) => x.status === "rejected").every((x) => /too many failed/.test(String((x as PromiseRejectedResult).reason)))).toBe(true);
+  }, 30_000);
+
+  it("anchoring: one run at a time across connections, and receipts in a pending attempt are not offered again", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const first = withSessionLock(sql, 99_001, () => gate.then(() => "first"));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(await withSessionLock(sql, 99_001, async () => "second")).toEqual({ ran: false });
+    release();
+    expect(await first).toEqual({ ran: true, value: "first" });
+    // The lock was released on the same connection that took it, so it is free again.
+    expect(await withSessionLock(sql, 99_001, async () => "third")).toEqual({ ran: true, value: "third" });
+
+    const before = await pendingRoot(sql);
+    expect(before.count).toBeGreaterThan(1);
+    await sql`insert into anchor_attempts (id, chain_id, merkle_root, receipt_ids, tx_hash) values ('ka_test', 8453, 'r', ${before.receiptIds.slice(0, 1)}, '0xabc')`;
+    const after = await pendingRoot(sql);
+    expect(after.count).toBe(before.count - 1);
+    expect(after.receiptIds).not.toContain(before.receiptIds[0]);
+    await sql`delete from anchor_attempts where id = 'ka_test'`;
+  });
+
+  it("stores one offline Grifter run for the public page when none exists, then never repeats", async () => {
+    await sql`truncate grifter_runs`;
+    const r = await ensureShowcase(sql);
+    expect(r?.grifter).toMatch(/^kg_/);
+    const [{ n }] = await sql<{ n: number }[]>`select count(*)::int as n from grifter_runs`;
+    expect(n).toBe(1);
+    expect(await ensureShowcase(sql)).toBeUndefined();
+  }, 60_000);
+
+  it("takes over an idempotency claim abandoned by a crashed request, and never refuses a valid admin key in a burst", async () => {
+    const h = route(async () => json({ ok: true }));
+    const post = () => new Request("https://kept.test/api/v1/idem-crash", { method: "POST", headers: { "idempotency-key": "k-crash", authorization: "Bearer admin-two" } });
+    // Simulate a process that died after claiming the key 10 minutes ago.
+    const scope = (await import("node:crypto")).createHash("sha256").update("Bearer admin-two\n").digest("hex").slice(0, 32);
+    await sql`insert into idempotency_keys (key, route, status, body, created_at) values (${`${scope}:k-crash`}, '/api/v1/idem-crash', 0, '', now() - interval '10 minutes')`;
+    const res = await h(post(), {});
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+
+    const saved = process.env.KEPT_ADMIN_KEY;
+    try {
+      process.env.KEPT_ADMIN_KEY = "a-valid-admin-key-for-tests-000000";
+      resetEnvCache();
+      const r = () => new Request("https://kept.test/api", { headers: { "x-real-ip": "198.51.100.99" } });
+      const results = await Promise.allSettled(Array.from({ length: 20 }, () => verifyCredential(r(), "a-valid-admin-key-for-tests-000000")));
+      expect(results.every((x) => x.status === "fulfilled" && x.value === true)).toBe(true);
+    } finally {
+      if (saved === undefined) delete process.env.KEPT_ADMIN_KEY;
+      else process.env.KEPT_ADMIN_KEY = saved;
+      resetEnvCache();
+    }
+  }, 30_000);
 });

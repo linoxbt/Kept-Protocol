@@ -237,8 +237,14 @@ async function Commitment({ params }: { params: Promise<{ id: string }> }) {
                   </span>
                   <span className="mono text-xs text-muted">opened {fmtDate(x.opened_at, true)}</span>
                 </div>
-                <p className="mt-1 whitespace-pre-wrap">{x.reason}</p>
-                {x.evidence_url ? <a className="link text-xs mono break-all" href={x.evidence_url} target="_blank" rel="noreferrer nofollow">{x.evidence_url}</a> : null}
+                {(x.status === "open" || x.status === "rejected") && !admin ? (
+                  <p className="mt-1 text-muted">{x.status === "open" ? "Awaiting review. The reason and evidence are published once a reviewer accepts the dispute." : "Rejected after review."}</p>
+                ) : (
+                  <>
+                    <p className="mt-1 whitespace-pre-wrap">{x.reason}</p>
+                    {x.evidence_url && /^https?:\/\//i.test(x.evidence_url) ? <a className="link text-xs mono break-all" href={x.evidence_url} target="_blank" rel="noreferrer nofollow ugc">{x.evidence_url}</a> : null}
+                  </>
+                )}
                 {x.resolution ? <p className="text-xs text-muted mt-1">Decision: {x.resolution}</p> : null}
                 {admin && (x.status === "open" || x.status === "accepted") ? <DisputeDecision id={x.id} status={x.status} /> : null}
               </li>

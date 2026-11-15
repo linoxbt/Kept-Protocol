@@ -15,7 +15,8 @@ import { newId } from "@/lib/ids";
 import { ExtractOut } from "@/serv/schemas";
 import { ServError } from "@/serv/client";
 import type { ProjectRow, SnapshotRow } from "./commitments";
-import { assertBudget, meterFor, servClient } from "./serv";
+import { assertBudget, budgetedDeps, servClient } from "./serv";
+import { withHeartbeat } from "./jobs";
 import { Conflict, Invalid, NotFound } from "./sources";
 
 export interface ExtractionRow {
@@ -66,7 +67,7 @@ export async function runAndStoreExtraction(
                     ${input.targetCommitmentId ?? null}, ${input.preview ? new Date(Date.now() + 24 * 3600_000) : null})`;
   const work = async (): Promise<ExtractionRow> => {
     try {
-      const result = await runExtraction(text, projectContext(input.project), { serv: client, meter: meterFor(id, sql) });
+      const result = await withHeartbeat("extractions", id, sql, () => runExtraction(text, projectContext(input.project), { serv: client, ...budgetedDeps(id, sql) }));
       const [row] = await sql<ExtractionRow[]>`update extractions set status = 'done', result = ${sql.json(result as never)} where id = ${id} returning *`;
       return row;
     } catch (e) {
@@ -104,7 +105,7 @@ export async function createManualDraft(
   const fields = parsed.data;
   const end = start + input.quote.length;
   const context = snap.text.slice(Math.max(0, start - 1000), Math.min(snap.text.length, end + 1000));
-  const grounding = checkGrounding(fields, input.quote, context);
+  const grounding = checkGrounding(fields, input.quote, context, { derivedBy: "reviewer" });
   const rules = classifyByRules(fields, input.quote);
   const draft: Draft = {
     index: 0,
@@ -203,8 +204,8 @@ export async function prepareSpec(req: ConfirmRequest, sql: Sql = db(), opts: { 
   const merged = ExtractOut.safeParse({ ...draft.fields, ...(req.edits ?? {}) });
   if (!merged.success) throw new Invalid(merged.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "));
   if (req.edits && Object.keys(req.edits).length) {
-    const before = new Set(checkGrounding(draft.fields, draft.quote, draft.context).flags.filter((f) => f.startsWith("UNGROUNDED")));
-    const after = checkGrounding(merged.data, draft.quote, draft.context).flags.filter((f) => f.startsWith("UNGROUNDED") && !before.has(f));
+    const before = new Set(checkGrounding(draft.fields, draft.quote, draft.context, { derivedBy: "reviewer" }).flags.filter((f) => f.startsWith("UNGROUNDED")));
+    const after = checkGrounding(merged.data, draft.quote, draft.context, { derivedBy: "reviewer" }).flags.filter((f) => f.startsWith("UNGROUNDED") && !before.has(f));
     if (after.length) throw new Conflict(`edits must match the source text (${after.join(", ")}); publish a new source or declare the value as derived`);
   }
   const fields = merged.data;
@@ -251,13 +252,21 @@ export async function confirmDraft(req: ConfirmRequest, sql: Sql = db()): Promis
   const { spec, extraction, snapshot, project } = prepared;
   if (extraction.preview || !snapshot || !project) throw new Invalid("previews cannot be confirmed; capture the source on a project first");
   if (extraction.target_commitment_id) throw new Invalid("this extraction proposes a new version; confirm it as a version instead");
+  const [already] = await sql<{ commitment_id: string }[]>`select commitment_id from commitment_versions where extraction_id = ${extraction.id} and draft_index = ${req.draftIndex} limit 1`;
+  if (already) throw new Conflict(`this draft is already confirmed as ${already.commitment_id}`);
   const commitmentId = newId("kc");
   const versionId = newId("kv");
-  await sql.begin(async (tx) => {
-    await tx`insert into commitments (id, project_id, current_version_id, status, status_reason) values (${commitmentId}, ${project.id}, ${versionId}, 'pending', 'confirmed; first check pending')`;
-    await tx`insert into commitment_versions (id, commitment_id, version, snapshot_id, extraction_id, draft_index, spec, change_kind, confirmed_by, published_at)
-             values (${versionId}, ${commitmentId}, 1, ${snapshot.id}, ${extraction.id}, ${req.draftIndex}, ${tx.json(spec as never)}, 'initial', ${req.reviewer}, ${snapshot.captured_at})`;
-    await tx`insert into admin_log (action, target, detail) values ('confirm_draft', ${commitmentId}, ${tx.json({ extraction: extraction.id, draft: req.draftIndex, reviewer: req.reviewer })})`;
-  });
+  try {
+    await sql.begin(async (tx) => {
+      await tx`insert into commitments (id, project_id, current_version_id, status, status_reason) values (${commitmentId}, ${project.id}, ${versionId}, 'pending', 'confirmed; first check pending')`;
+      await tx`insert into commitment_versions (id, commitment_id, version, snapshot_id, extraction_id, draft_index, spec, change_kind, confirmed_by, published_at)
+               values (${versionId}, ${commitmentId}, 1, ${snapshot.id}, ${extraction.id}, ${req.draftIndex}, ${tx.json(spec as never)}, 'initial', ${req.reviewer}, ${snapshot.captured_at})`;
+      await tx`insert into admin_log (action, target, detail) values ('confirm_draft', ${commitmentId}, ${tx.json({ extraction: extraction.id, draft: req.draftIndex, reviewer: req.reviewer })})`;
+    });
+  } catch (e) {
+    // Two concurrent confirms of one draft: the unique index lets one through.
+    if ((e as { code?: string }).code === "23505") throw new Conflict("this draft was just confirmed by another request");
+    throw e;
+  }
   return { commitmentId, versionId };
 }

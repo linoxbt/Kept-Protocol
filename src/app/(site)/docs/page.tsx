@@ -53,7 +53,7 @@ export default function Docs() {
         <ul className="text-sm space-y-2 list-disc pl-5">
           <li>Public reads are signed: <span className="mono">Kept-Signature</span> is an EIP-191 signature over the SHA-256 of the exact response body, by <span className="mono">Kept-Signer</span>.</li>
           <li>Errors are RFC 9457 problem details (<span className="mono">application/problem+json</span>).</li>
-          <li>Every POST accepts <span className="mono">Idempotency-Key</span>; the first response for a key is replayed to the same caller (keys are scoped to the credential that sent them).</li>
+          <li>Authenticated POSTs accept <span className="mono">Idempotency-Key</span>; the first successful response for a key is replayed to the same caller for 24 hours (keys are scoped to the credential that sent them). Anonymous POSTs (try-it, disputes) ignore it.</li>
           <li>Long actions (checks, Hindcast, preview checks, Grifter runs) answer <span className="mono">202</span> with a <span className="mono">poll</span> URL.</li>
           <li>Admin writes take <span className="mono">Authorization: Bearer &lt;admin key&gt;</span>.</li>
           <li>Webhooks carry <span className="mono">Kept-Webhook-Signature: t=&lt;unix&gt;,v1=&lt;hmac_sha256(secret, t + &quot;.&quot; + body)&gt;</span>; reject timestamps older than 5 minutes.</li>
@@ -85,7 +85,7 @@ export default function Docs() {
         </ol>
         <pre className="panel p-4 text-xs mono overflow-auto">{`git clone <this repository> && cd kept && npm ci
 curl -s $KEPT/api/v1/receipts/kr_… > receipt.json
-npx tsx scripts/kept-verify.ts receipt.json --rpc https://base-rpc.publicnode.com`}</pre>
+npx tsx scripts/kept-verify.ts receipt.json --signer <published signer> --rpc https://base-rpc.publicnode.com`}</pre>
         <p className="text-sm text-muted mt-3">Every receipt page also has a <span className="text-ink">Verify in this browser</span> button that recomputes the hash and recovers the signer locally.</p>
       </Section>
       <p className="text-sm"><Link className="link" href="/try">Try it on a real project →</Link></p>

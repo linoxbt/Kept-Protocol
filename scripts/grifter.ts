@@ -10,7 +10,9 @@ import { OpenServClient } from "../src/serv/client";
 async function main() {
   const live = process.argv.includes("--live");
   if (live && !process.env.SERV_API_KEY) throw new Error("--live needs SERV_API_KEY");
-  const report = await runGrifter({ live: live ? new OpenServClient(process.env.SERV_API_KEY!, process.env.SERV_BASE_URL) : undefined });
+  // With a database, live calls are metered and held against the daily budget like any extraction.
+  const budget = live && process.env.DATABASE_URL ? (await import("../src/services/serv")).budgetedDeps(null) : undefined;
+  const report = await runGrifter({ live: live ? new OpenServClient(process.env.SERV_API_KEY!, process.env.SERV_BASE_URL) : undefined, budget });
   console.log(`Grifter ${report.mode} — prompts ${Object.values(report.prompt_versions).join(", ")}\n`);
   for (const [family, s] of Object.entries(report.summary.byFamily)) console.log(`  ${family.padEnd(28)} ${s.passed}/${s.total}`);
   console.log("");

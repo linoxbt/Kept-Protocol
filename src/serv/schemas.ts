@@ -7,10 +7,18 @@ import { z } from "zod";
 
 const CATEGORY_HINTS = ["token_lock", "vesting", "burn", "treasury", "governance", "fee_distribution", "other"] as const;
 
+/**
+ * Limits are applied by trimming, not by rejecting: a page that legitimately contains many
+ * injection sentences (or many promises) must still produce drafts. Rejecting the whole output let
+ * a project hide its own commitments by stuffing its page with "ignore previous instructions".
+ * Over-long quotes are dropped (they would not be a single promise), extra items are cut.
+ */
 export const LocateOut = z.object({
-  spans: z.array(z.object({ quote: z.string().min(1).max(1200), category_hint: z.enum(CATEGORY_HINTS) })).max(12),
+  spans: z
+    .array(z.object({ quote: z.string().min(1), category_hint: z.enum(CATEGORY_HINTS) }))
+    .transform((spans) => spans.filter((s) => s.quote.length <= 1200).slice(0, 12)),
   instructions_detected: z.boolean(),
-  injection_quotes: z.array(z.string()).max(10),
+  injection_quotes: z.array(z.string()).transform((q) => q.slice(0, 10)),
 });
 export type LocateOut = z.infer<typeof LocateOut>;
 

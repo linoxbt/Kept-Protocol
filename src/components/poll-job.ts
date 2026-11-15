@@ -3,11 +3,25 @@ export async function pollJob<T = Record<string, unknown>>(poll: string, opts: {
   const started = Date.now();
   const every = opts.intervalMs ?? 2_000;
   const timeout = opts.timeoutMs ?? 10 * 60_000;
+  let transient = 0;
   for (;;) {
     await new Promise((r) => setTimeout(r, every));
     opts.onTick?.(Date.now() - started);
-    const res = await fetch(poll, { cache: "no-store" });
+    let res: Response;
+    try {
+      res = await fetch(poll, { cache: "no-store" });
+    } catch {
+      // Offline for a moment or a dropped connection: keep polling a few times before giving up.
+      if (++transient > 5) throw new Error("lost the connection while waiting; refresh the page to see the result");
+      continue;
+    }
     const job = (await res.json().catch(() => ({}))) as { status?: string; result?: T; error?: string; detail?: string };
+    if (res.status >= 500 || res.status === 429) {
+      // A gateway hiccup (502/504) during a deploy is not the job failing.
+      if (++transient > 5) throw new Error(job.detail ?? `polling failed (${res.status})`);
+      continue;
+    }
+    transient = 0;
     if (!res.ok) throw new Error(job.detail ?? `polling failed (${res.status})`);
     if (job.status === "done") return job.result as T;
     if (job.status === "failed") throw new Error(job.error ?? "the job failed");

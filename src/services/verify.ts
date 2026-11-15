@@ -5,18 +5,18 @@
 import type { ChainAdapter } from "@/chain/adapter";
 import { getChain } from "@/chain";
 import { METHOD_VERSIONS, runMethod } from "@/core/methods";
-import { deriveStatus, type ProviderConfirmation, type StatusDecision } from "@/core/status";
+import { breachProof, MAX_PROOF_TRANSFERS, deriveStatus, type ProviderConfirmation, type StatusDecision } from "@/core/status";
 import type { CommitmentSpec, MethodResult, Transfer } from "@/core/types";
 import { db, type Q, type Sql } from "@/db/client";
 import { codeCommit } from "@/lib/env";
 import { newId } from "@/lib/ids";
 import { isDevSigner, getSigner } from "@/receipts/signer";
 import { canonicalJson, sha256Hex, type ReceiptBody } from "@/receipts/receipt";
-import { loadCommitment } from "./commitments";
+import { listVersions, loadCommitment } from "./commitments";
 import { activeDispute } from "./disputes";
 import { startJob, type Defer } from "./jobs";
 import { NotFound } from "./sources";
-import { collectEvidence, watchedAddresses, type CollectedEvidence } from "./evidence";
+import { cachedTransfers, collectEvidence, watchedAddresses, type CollectedEvidence } from "./evidence";
 import { insertReceipt, type StoredReceipt } from "./receipts";
 
 export const METHOD_LIMITATIONS: Record<string, string[]> = {
@@ -24,10 +24,12 @@ export const METHOD_LIMITATIONS: Record<string, string[]> = {
     "Counts ERC-20 Transfer logs only; tokens held by addresses not in the subject list are not covered.",
     "Bridged, wrapped or rebasing representations of the token are not covered.",
     "Moves between addresses the reviewer confirmed as the same entity are not counted.",
+    "Tokens burned from a locked address (sent to the zero or 0x…dEaD address) are destroyed, not moved, and are not counted as leaving the lock.",
   ],
   vesting_schedule_v1: [
     "Releases are measured as Transfer logs out of the vesting contract.",
     "A contract schedule faster than stated is an early warning; it becomes a breach only when tokens actually leave early.",
+    "Releases are compared with the stated schedule allowing the larger of 1 day and 0.5% of its duration (calendar months vs. contract seconds, start-time offsets).",
   ],
   burn_v1: [
     "Only burns sent by the attributed executor to the zero or 0x…dEaD address count.",
@@ -116,11 +118,17 @@ export async function confirmViolation(
   if (result.outcome !== "violated") return { confirmation: "not_needed", detail: "no violation to confirm" };
   try {
     if (result.violating.length > 0) {
-      const sample = result.violating.slice(0, 3);
-      const ok = await Promise.all(sample.map((t) => confirm.confirmTransfer(t)));
+      // Confirm every transfer in the proof (the breach-capable transfers whose sum alone exceeds
+      // the limit), not just the one that crossed it: the earlier ones built the total.
+      const proof = breachProof(spec, result);
+      if (!proof) return { confirmation: "unavailable", detail: "no outflow from an address with confirmed attribution exceeds the limit on its own" };
+      // Too many to confirm one by one (many small sells, stream withdrawals): recount every transfer
+      // from the watched addresses on the second provider instead (resumable across checks).
+      if (proof.transfers.length > MAX_PROOF_TRANSFERS) return await recountShortfall(spec, result, collected, confirm, sql, budget);
+      const ok = await Promise.all(proof.transfers.map((t) => confirm.confirmTransfer(t)));
       return ok.every(Boolean)
-        ? { confirmation: "confirmed", detail: `${sample.length} violating transfer(s) independently confirmed at finalized blocks` }
-        : { confirmation: "disagreed", detail: "the confirmation provider could not reproduce a violating transfer" };
+        ? { confirmation: "confirmed", detail: `${proof.transfers.length} transfer(s) proving the violation independently confirmed at finalized blocks` }
+        : { confirmation: "disagreed", detail: "the confirmation provider could not reproduce a transfer the violation rests on" };
     }
     // A shortfall (absence of burns) is confirmed by a full, resumable recount on the second provider.
     return await recountShortfall(spec, result, collected, confirm, sql, budget);
@@ -134,6 +142,8 @@ export interface Evaluation {
   decision: StatusDecision;
   collected: CollectedEvidence;
   confirmation: Confirmation;
+  /** Set when a breach was decided during backfill: the result covers blocks up to this transfer only. */
+  range?: { toBlock: bigint; toTime: number };
 }
 
 /** Evidence + method + confirmation + status. No writes except the log cache. */
@@ -141,11 +151,17 @@ export async function evaluate(spec: CommitmentSpec, sql: Sql = db(), opts: { bu
   const chain = getChain(spec.chain_id);
   const collected = await collectEvidence(spec, { sql, adapter: chain.primary, budgetBlocks: opts.budgetBlocks });
   let result = runMethod(spec, collected.evidence);
+  let range: Evaluation["range"];
   if (!collected.complete) {
     // Outflows and releases only accumulate, so a violation in the scanned part is real.
     const partial = runMethod(spec, { ...collected.evidence, transfers: collected.partialTransfers });
     if (partial.outcome === "violated" && spec.method_id !== "burn_v1") {
-      result = partial;
+      // Decide (and later prove) the breach over exactly the blocks up to the transfer that broke the
+      // limit, so the receipt's block range is the one the result was computed from.
+      const crossing = partial.violating[0];
+      const upTo = collected.partialTransfers.filter((t) => t.blockNumber <= crossing.blockNumber);
+      range = { toBlock: crossing.blockNumber, toTime: crossing.blockTime };
+      result = runMethod(spec, { ...collected.evidence, transfers: upTo, finalizedBlock: crossing.blockNumber, finalizedTime: crossing.blockTime, asOf: crossing.blockTime });
     } else {
       const pct = scanProgress(collected);
       return {
@@ -162,7 +178,7 @@ export async function evaluate(spec: CommitmentSpec, sql: Sql = db(), opts: { bu
       ? { confirmation: "unavailable", detail: "previews are not independently confirmed" }
       : await confirmViolation(spec, result, collected, chain.confirm, sql, opts.budgetBlocks ?? MAX_CONFIRM_BLOCKS_PER_CHECK);
   const decision = deriveStatus(spec, result, confirmation.confirmation);
-  return { result, decision, collected, confirmation };
+  return { result, decision, collected, confirmation, range };
 }
 
 function scanProgress(c: CollectedEvidence): number {
@@ -210,7 +226,12 @@ export async function runCheck(commitmentId: string, opts: { sql?: Sql; trigger?
   const { result, collected, confirmation } = evaluation;
   // An accepted dispute overlays the status until it is resolved; the mechanical result stays in the reason.
   const dispute = await activeDispute(commitmentId, sql);
-  const standing = dispute ? null : await standingBreach(commitmentId, version, sql);
+  const stored = dispute ? null : await standingBreach(commitmentId, version, sql);
+  // No recorded breach under an earlier version: check the evidence itself, so a violation that was
+  // still At risk (awaiting finality or the second provider) when the promise was revised is not
+  // erased by the revision.
+  const earlier = dispute || stored ? null : await earlierVersionViolation(commitmentId, version, evaluation.collected, sql);
+  const standing = stored ?? (earlier?.kind === "breach" ? earlier : null);
   const decision: StatusDecision = dispute
     ? { status: "disputed", final: false, reason: `Under review after a dispute (${dispute.id}). Mechanical result: ${evaluation.decision.reason}` }
     : standing
@@ -219,10 +240,13 @@ export async function runCheck(commitmentId: string, opts: { sql?: Sql; trigger?
           final: true,
           reason: `Breached under v${standing.version}: ${standing.reason.replace(/^Condition not met:\s*/, "")}. The promise was revised afterwards (v${version.version}); a later revision does not undo a breach. Under v${version.version} alone: ${evaluation.decision.reason}`,
         }
-      : evaluation.decision;
+      : earlier?.kind === "pending"
+        ? { status: "at_risk", final: false, reason: `${earlier.reason}. The promise was revised afterwards (v${version.version}); a later revision does not undo a breach. Under v${version.version} alone: ${evaluation.decision.reason}` }
+        : evaluation.decision;
   const signer = getSigner();
   const limitations = [...(METHOD_LIMITATIONS[spec.method_id] ?? []), ...result.notes];
   if (!collected.complete) limitations.push(`Evidence backfill incomplete: scanned to block ${collected.scannedTo}.`);
+  if (evaluation.range) limitations.push(`Breach found during backfill: the result covers blocks up to ${evaluation.range.toBlock}, the transfer that broke the limit. Addresses not yet scanned that far can only add to the outflow.`);
   if (isDevSigner(signer.address)) limitations.push("Signed with the public development key: this receipt proves nothing until re-issued with Kept's production key.");
 
   const evidenceList = [...result.violating, ...result.counted.filter((t) => !result.violating.includes(t))].slice(0, 500);
@@ -240,9 +264,9 @@ export async function runCheck(commitmentId: string, opts: { sql?: Sql; trigger?
       token: spec.token.address,
       subjects: spec.subjects.map((s) => s.address),
       from_block: collected.windowFromBlock.toString(),
-      to_block: collected.evidence.finalizedBlock.toString(),
+      to_block: (evaluation.range?.toBlock ?? collected.evidence.finalizedBlock).toString(),
       to_block_finalized: true,
-      to_block_time: collected.evidence.finalizedTime,
+      to_block_time: evaluation.range?.toTime ?? collected.evidence.finalizedTime,
     },
     evidence: evidenceList.map(ev),
     result: {
@@ -344,6 +368,50 @@ export async function standingBreach(
     order by k.finished_at
     limit 1`;
   return b ? { version: b.version, reason: b.reason ?? "the condition was not met", receiptId: b.receipt_id } : null;
+}
+
+/** Facts about earlier versions only change from "pending" to "breach", so a found breach is cached. */
+const earlierBreachCache = new Map<string, { kind: "breach"; version: number; reason: string; receiptId: null }>();
+
+/**
+ * Evaluates each earlier version (since the last correction) over the finalized evidence from
+ * before the version that replaced it was published. A violation there that the attribution rules
+ * allow to be a breach, confirmed on the second provider, stands whatever later versions say; one
+ * not yet confirmed keeps the record At risk. Locks and vesting only (a burn shortfall is decided
+ * at the window's end, which a revision before then cannot have hidden).
+ */
+export async function earlierVersionViolation(
+  commitmentId: string,
+  current: { version: number; change_kind: string },
+  collected: CollectedEvidence,
+  sql: Sql = db(),
+): Promise<{ kind: "breach"; version: number; reason: string; receiptId: null } | { kind: "pending"; version: number; reason: string } | null> {
+  if (current.change_kind === "correction" || current.version <= 1) return null;
+  const cacheKey = `${commitmentId}:${current.version}`;
+  const cached = earlierBreachCache.get(cacheKey);
+  if (cached) return cached;
+  const versions = await listVersions(commitmentId, sql);
+  const lastCorrection = Math.max(0, ...versions.filter((v) => v.change_kind === "correction" && v.version <= current.version).map((v) => v.version));
+  for (const v of versions) {
+    if (v.version >= current.version || v.version < lastCorrection) continue;
+    if (v.spec.method_id === "burn_v1") continue;
+    const next = versions.find((x) => x.version === v.version + 1);
+    if (!next) continue;
+    const until = Math.floor(next.published_at.getTime() / 1000);
+    const transfers = (await cachedTransfers(sql, v.spec.chain_id, v.spec.token.address, watchedAddresses(v.spec), 0n, 2n ** 63n)).filter((t) => t.blockTime < until);
+    const r = runMethod(v.spec, { ...collected.evidence, transfers, unfinalizedTransfers: [], asOf: until });
+    if (r.outcome !== "violated") continue;
+    const ifConfirmed = deriveStatus(v.spec, r, "confirmed");
+    if (ifConfirmed.status !== "breached") continue; // attribution cannot support a breach
+    const conf = await confirmViolation(v.spec, r, collected, getChain(v.spec.chain_id).confirm, sql);
+    if (conf.confirmation === "confirmed") {
+      const found = { kind: "breach" as const, version: v.version, reason: ifConfirmed.reason, receiptId: null };
+      earlierBreachCache.set(cacheKey, found);
+      return found;
+    }
+    return { kind: "pending", version: v.version, reason: `A violation under v${v.version} awaits confirmation: ${ifConfirmed.reason.replace(/^Condition not met:\s*/, "")}` };
+  }
+  return null;
 }
 
 /** Takes the commitment's check lease (the same one the worker uses), so a manual check never runs alongside a scheduled one. */

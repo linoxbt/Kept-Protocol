@@ -30,6 +30,9 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Version skew protection: assets carry ?dpl=<commit> and a client still running the previous
+  // deploy does a full reload on its next navigation instead of requesting chunks that are gone.
+  deploymentId: (process.env.RAILWAY_GIT_COMMIT_SHA ?? process.env.KEPT_CODE_COMMIT)?.slice(0, 12) || undefined,
   cacheComponents: true,
   partialPrefetching: true,
   async headers() {

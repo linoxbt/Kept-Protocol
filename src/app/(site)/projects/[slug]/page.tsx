@@ -45,7 +45,7 @@ async function Project({ params }: { params: Promise<{ slug: string }> }) {
 
       <Section title={`Commitments (${commitments.length})`}>
         {commitments.length === 0 ? (
-          <Empty>No commitments yet. Add a source from the admin console.</Empty>
+          <Empty>No confirmed commitments yet. A promise appears here once a reviewer confirms it against the project&apos;s own published text.</Empty>
         ) : (
           <table className="data stack panel">
             <thead>

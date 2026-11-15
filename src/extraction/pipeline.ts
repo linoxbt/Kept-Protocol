@@ -85,12 +85,26 @@ export interface CallRecord {
   response: ServResponse | null;
   outcome: "ok" | "invalid" | "error";
   error?: string;
+  /** serv_* tools attached to the request (they are billed on top of the model). */
+  servTools: number;
+  /** The budget hold taken before the call, released when the call is metered. */
+  hold: BudgetHold | null;
+}
+
+export interface BudgetHold {
+  id: string;
+  amountUsd: number;
 }
 
 export interface PipelineDeps {
   serv: ServClient;
-  /** Persist metering; may throw ServError('budget') to stop extraction. */
+  /** Persist metering for every call, successful or not. */
   meter: (rec: CallRecord) => Promise<void>;
+  /**
+   * Reserve the call's worst-case cost before it is sent; throws ServError('budget') when the
+   * daily budget cannot cover it, which stops the extraction. Omitted in offline tests.
+   */
+  reserve?: (req: ServRequest) => Promise<BudgetHold>;
   onProgress?: (event: { stage: string; detail?: string }) => void;
 }
 
@@ -99,11 +113,13 @@ async function call<T>(deps: PipelineDeps, req: ServRequest, schema: z.ZodType<T
   // One retry with an identical request on invalid output, then give up (review queue).
   for (let attempt = 0; attempt < 2; attempt++) {
     let response: ServResponse | null = null;
+    const hold = deps.reserve ? await deps.reserve(req) : null;
+    const meta = { callSite: req.callSite, model: req.model, promptVersion: req.prompt.version, promptSha256: req.prompt.sha256, servTools: req.servTools.length, hold };
     try {
       response = await deps.serv.complete(req);
     } catch (e) {
       const err = e instanceof ServError ? e : new ServError(String(e), "upstream");
-      await deps.meter({ callSite: req.callSite, model: req.model, promptVersion: req.prompt.version, promptSha256: req.prompt.sha256, response: null, outcome: "error", error: err.message });
+      await deps.meter({ ...meta, response: null, outcome: "error", error: err.message });
       throw err;
     }
     let problem: string | null = null;
@@ -119,15 +135,7 @@ async function call<T>(deps: PipelineDeps, req: ServRequest, schema: z.ZodType<T
         problem = "output is not valid JSON";
       }
     }
-    await deps.meter({
-      callSite: req.callSite,
-      model: req.model,
-      promptVersion: req.prompt.version,
-      promptSha256: req.prompt.sha256,
-      response,
-      outcome: problem ? "invalid" : "ok",
-      error: problem ?? undefined,
-    });
+    await deps.meter({ ...meta, response, outcome: problem ? "invalid" : "ok", error: problem ?? undefined });
     if (!problem) return { value, error: null };
     lastError = problem;
   }

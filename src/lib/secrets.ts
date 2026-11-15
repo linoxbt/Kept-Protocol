@@ -12,7 +12,7 @@
  * The admin credential is never generated: /admin/setup sets a password (scrypt hash) and needs
  * the setup token printed in the server log, so a stranger cannot claim a fresh deployment.
  */
-import { createCipheriv, createDecipheriv, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { createCipheriv, createDecipheriv, randomBytes, scrypt, timingSafeEqual, type BinaryLike } from "node:crypto";
 import postgres from "postgres";
 import { resetEnvCache } from "./env";
 
@@ -106,16 +106,21 @@ export async function bootstrapSecrets(): Promise<void> {
   }
 }
 
-export function hashPassword(password: string): string {
+/** Async scrypt: the work runs on the thread pool, so guesses cannot stall the event loop. */
+function scryptAsync(password: BinaryLike, salt: BinaryLike, keylen: number): Promise<Buffer> {
+  return new Promise((resolve, reject) => scrypt(password, salt, keylen, { N: 16384, r: 8, p: 1 }, (err, key) => (err ? reject(err) : resolve(key))));
+}
+
+export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16);
-  const hash = scryptSync(password, salt, 32, { N: 16384, r: 8, p: 1 });
+  const hash = await scryptAsync(password, salt, 32);
   return `scrypt$${salt.toString("hex")}$${hash.toString("hex")}`;
 }
 
-export function verifyPassword(password: string, stored: string): boolean {
+export async function verifyPassword(password: string, stored: string): Promise<boolean> {
   const [scheme, saltHex, hashHex] = stored.split("$");
   if (scheme !== "scrypt" || !saltHex || !hashHex) return false;
   const expected = Buffer.from(hashHex, "hex");
-  const got = scryptSync(password, Buffer.from(saltHex, "hex"), expected.length, { N: 16384, r: 8, p: 1 });
+  const got = await scryptAsync(password, Buffer.from(saltHex, "hex"), expected.length);
   return got.length === expected.length && timingSafeEqual(got, expected);
 }

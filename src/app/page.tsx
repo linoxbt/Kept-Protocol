@@ -177,7 +177,8 @@ function Steps() {
 
 async function FactsInner() {
   await connection();
-  const s = await globalStats();
+  const s = await globalStats().catch(() => null);
+  if (!s) return <OfflineNotice what="Live figures" />;
   const live: [string, string][] = [
     [String(s.commitments), "commitments monitored"],
     [String(s.receipts), "signed receipts"],
@@ -229,7 +230,8 @@ function LiveRecord() {
 
 async function FeedTable() {
   await connection();
-  const items = await feed(8);
+  const items = await feed(8).catch(() => null);
+  if (!items) return <OfflineNotice what="The feed" />;
   if (!items.length) {
     return (
       <div className="relative border border-line p-14 text-center dotgrid">
@@ -364,5 +366,14 @@ function Verify() {
         </div>
       </Reveal>
     </section>
+  );
+}
+
+/** Shown in place of a live section when the database cannot be reached; the rest of the page still renders. */
+function OfflineNotice({ what }: { what: string }) {
+  return (
+    <div className="border border-line p-8 text-center">
+      <p className="text-muted">{what} cannot be loaded right now. Monitoring runs separately and is not affected; try again in a moment.</p>
+    </div>
   );
 }

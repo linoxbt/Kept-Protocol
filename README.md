@@ -46,7 +46,7 @@ SERV is called only on the language side, at three call sites. It is never asked
 
 The sentence the UI shows as *what exactly is checked* is written by code from the spec (`src/core/describe.ts`), never taken from the model: in live testing SERV's own summary inverted a lock's direction while its structured fields were right.
 
-Confidence is computed, never asked for: grounding passed, the two Multipath runs agree, and the code rules agree. Every call is metered (`serv_calls`: model, prompt version and SHA-256, tokens, latency, estimated cost), with a daily budget. The landing page shows SERV calls per commitment.
+Confidence is computed, never asked for: grounding passed, the two Multipath runs agree, and the code rules agree. Every call is metered (`serv_calls`: model, prompt version and SHA-256, tokens, latency, estimated cost), with a daily budget that every call reserves against before it is sent (so concurrent extractions cannot overspend it). The admin console shows SERV calls per commitment.
 
 Transport policy: 429 → exponential backoff honouring `Retry-After`; 5xx and Shadow Agent 502 → two retries, then review; 60 s timeout (180 s for extraction, where an uncached Kronos audit plus Shadow Agent revisions took about 116 s in testing); 400 → no retry; 401 → halt; five consecutive failures open the circuit for five minutes. A refused, truncated or invalid response is a failure, never data.
 
@@ -106,7 +106,7 @@ Secrets bootstrap themselves: on first start with a database, Kept generates its
 
 | Script | Does |
 |---|---|
-| `npm test` | 67 unit and integration tests. Integration tests need Postgres at `DATABASE_URL_TEST` and are skipped when none is reachable. `KEPT_E2E_URL=… npx vitest run tests/e2e` runs read-only HTTP checks against a deployment. |
+| `npm test` | 97 unit and integration tests (74 unit, 23 integration). Integration tests need Postgres at `DATABASE_URL_TEST` and are skipped when none is reachable. `KEPT_E2E_URL=… npx vitest run tests/e2e` runs read-only HTTP checks against a deployment. |
 | `npm run grifter` | Runs the adversarial suite offline. `-- --live` sends every source to SERV; `--save` stores the run. |
 | `npm run worker` | Long-running monitor: due checks, source watching, deadline alerts, webhooks, and automatic EAS anchoring once the operator key is funded. |
 | `npm run anchor` | Attests the pending Merkle root on Base through EAS by hand. `-- --register-schema` runs once. |
@@ -141,16 +141,16 @@ Measured on Base on 12 Nov 2026: blocks every 0.2 s, and `finalized` trails `lat
 
 ```bash
 curl -s https://<kept>/api/v1/receipts/kr_… > receipt.json
-npm run verify-receipt -- receipt.json --rpc https://base-rpc.publicnode.com
+npm run verify-receipt -- receipt.json --signer 0x98Eb4A5Db492b28AAb5225Cb2FfaEa941EDBC9E2 --rpc https://base-rpc.publicnode.com
 ```
 
-`kept-verify` recomputes the SHA-256 of the canonical JSON, recovers the EIP-191 signer, checks the Merkle inclusion proof once anchored, then re-fetches every Transfer log in the receipt's block range from *your* RPC, reruns the named method version, and confirms the same result. Each receipt page also has a **Verify in this browser** button. The signer address is published at `/.well-known/agent-card.json`.
+`kept-verify` recomputes the SHA-256 of the canonical JSON and recovers the EIP-191 signer, which must equal the signer you pass with `--signer` (or, when verifying by URL without it, the one published in the deployment's `/.well-known/agent-card.json`); the public development key is always rejected. Once a receipt is anchored it checks that the Merkle leaf is this receipt, that the proof reaches the root, and that this root is the one attested in the EAS attestation **read from your RPC on Base**. Then it re-fetches every Transfer log in the receipt's block range from *your* RPC, reruns the named method version, and confirms the same result. Each receipt page also has a **Verify in this browser** button, which compares the recovered signer with the published one.
 
 ---
 
 ## API
 
-OpenAPI 3.1 at `/api/v1/openapi.json`; human docs at `/docs`. Public reads carry `Kept-Signature`, an EIP-191 signature over the SHA-256 of the body. Errors are RFC 9457 problem details. POSTs accept `Idempotency-Key`. Webhooks are HMAC-signed (`Kept-Webhook-Signature: t=…,v1=…`) and delivered from a transactional outbox.
+OpenAPI 3.1 at `/api/v1/openapi.json`; human docs at `/docs`. Commitment, project, feed, version and agent responses carry `Kept-Signature`, an EIP-191 signature over the SHA-256 of the body (receipts are signed in their own body). Errors are RFC 9457 problem details. POSTs accept `Idempotency-Key`. Webhooks are HMAC-signed (`Kept-Webhook-Signature: t=…,v1=…`) and delivered from a transactional outbox.
 
 ---
 
@@ -158,7 +158,7 @@ OpenAPI 3.1 at `/api/v1/openapi.json`; human docs at `/docs`. Public reads carry
 
 - The agent card is an ERC-8004-style registration file; Kept is not yet registered in an onchain ERC-8004 identity registry.
 - x402 payments settle in USDC on Base mainnet through PayAI's public facilitator; the facilitator is a third party that relays each signed payment onchain. Without configuration the code defaults to Base Sepolia (x402.org) for testing.
-- Base only in this release; methods read ERC-20 `Transfer` logs. Treasury, governance and fee-distribution commitments are classified and recorded but not yet monitored.
+- Base only in this release; methods read ERC-20 `Transfer` logs. Treasury, governance and fee-distribution promises are recognised and classified in drafts, but they have no verification method in this release, so they cannot be confirmed as monitored commitments.
 - History: free public endpoints serve recent blocks only. When the primary refuses a historical request, Kept retries it on an archive-capable fallback (`BASE_RPC_URL_ARCHIVE`, default Tenderly's public Base gateway, 1,000 blocks per log query), so old windows are checked, about 150,000 blocks per check. A paid archive RPC as `BASE_RPC_URL` makes backfill much faster.
 - A database is not immutable, and Kept never claims it is. Integrity comes from the hash chain, the signatures and the onchain anchors, which third parties can check.
 - Prices on the landing page are hypotheses to test with the first launchpad pilot, not market data.

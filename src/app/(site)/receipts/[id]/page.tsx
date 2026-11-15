@@ -109,7 +109,7 @@ async function Receipt({ params }: { params: Promise<{ id: string }> }) {
           <p className="flex flex-wrap gap-2 items-center"><span className="label w-28">previous</span>{b.prev_sha256 ? <Hash value={b.prev_sha256} head={16} /> : <span className="mono text-xs text-muted">first receipt of this commitment</span>}</p>
           <p className="flex flex-wrap gap-2 items-center"><span className="label w-28">signer</span><Addr address={b.signer} full /></p>
           <p className="flex flex-wrap gap-2 items-center"><span className="label w-28">anchor</span>{anchor ? <span className="mono text-xs">root {anchor.anchor.merkle_root.slice(0, 16)}… · leaf {anchor.leaf_index} · <a className="link" href={`https://basescan.org/tx/${anchor.anchor.tx_hash}`} target="_blank" rel="noreferrer">EAS attestation</a></span> : <span className="mono text-xs text-muted">anchoring pending (not an error): included in the next daily root</span>}</p>
-          <VerifyInBrowser canonical={canonical} sha256={r.sha256} signature={r.signature} signer={b.signer} />
+          <VerifyInBrowser canonical={canonical} sha256={r.sha256} signature={r.signature} />
         </div>
       </Section>
 

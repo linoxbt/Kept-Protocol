@@ -5,12 +5,16 @@ import { requesterHash } from "@/services/ratelimit";
 
 export const GET = route(async (_req: Request, ctx: { params: Promise<{ id: string }> }) => {
   const { id } = await ctx.params;
-  return json({ data: await listDisputes(id) });
+  // Unreviewed and rejected disputes are public as a fact (id, status, date), not as text: a reason
+  // and link are published only once a reviewer accepts them, so the record cannot carry spam.
+  const rows = await listDisputes(id);
+  return json({ data: rows.map((d) => (d.status === "open" || d.status === "rejected" ? { ...d, reason: null, evidence_url: null } : d)) });
 });
 
 const Body = z.object({
   reason: z.string().min(20).max(4000),
-  evidence_url: z.string().url().max(2000).optional().nullable(),
+  // http(s) only: z.url() also accepts javascript: and data: URLs.
+  evidence_url: z.string().url().max(2000).refine((u) => /^https?:\/\//i.test(u), "evidence must be an http(s) link").optional().nullable(),
   contact: z.string().max(200).optional().nullable(),
 });
 

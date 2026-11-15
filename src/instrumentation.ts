@@ -5,6 +5,12 @@
  */
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    // Bring the schema up to date before anything reads it (the worker does the same; a lock
+    // serialises the two). KEPT_MIGRATE_ON_BOOT=0 leaves migrations to `npm run db:migrate`.
+    if (process.env.DATABASE_URL && process.env.KEPT_MIGRATE_ON_BOOT !== "0") {
+      const { migrate } = await import("./db/migrate");
+      await migrate(process.env.DATABASE_URL, (m) => console.log(`[kept] migrations: ${m}`));
+    }
     const { bootstrapSecrets } = await import("./lib/secrets");
     await bootstrapSecrets();
     const { assertProductionEnv } = await import("./lib/env");

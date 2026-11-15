@@ -52,3 +52,36 @@ describe("secrets at rest", () => {
     expect(() => openValue(sealed)).toThrow(/KEPT_SECRETS_KEK/);
   });
 });
+
+describe("rate-limit identity", () => {
+  it("keys IPv6 on its /64, so rotating addresses inside a prefix does not reset limits", async () => {
+    const { rateLimitIdentity } = await import("@/lib/http");
+    expect(rateLimitIdentity("2001:db8:abcd:12:1::1")).toBe("2001:db8:abcd:12::/64");
+    expect(rateLimitIdentity("2001:db8:abcd:12:ffff:ffff:ffff:ffff")).toBe("2001:db8:abcd:12::/64");
+    expect(rateLimitIdentity("2001:0DB8:0000:0012::5")).toBe("2001:db8:0:12::/64");
+    expect(rateLimitIdentity("::1")).toBe("0:0:0:0::/64");
+    expect(rateLimitIdentity("[2001:db8::1]")).toBe("2001:db8:0:0::/64");
+    expect(rateLimitIdentity("::ffff:203.0.113.9")).toBe("203.0.113.9");
+    expect(rateLimitIdentity("203.0.113.9")).toBe("203.0.113.9");
+    expect(rateLimitIdentity("fe80::1%eth0")).toBe("fe80:0:0:0::/64");
+  });
+});
+
+describe("redirect targets", () => {
+  it("accepts only paths on this site", async () => {
+    const { safeRedirectPath } = await import("@/lib/http");
+    expect(safeRedirectPath("/admin/extractions/kx_1?x=1", "/admin")).toBe("/admin/extractions/kx_1?x=1");
+    for (const bad of ["//evil.example", "/\\evil.example", "/\t/evil.example", "/\n/evil.example", "https://evil.example", "javascript:alert(1)", "evil", ""])
+      expect(safeRedirectPath(bad, "/admin"), bad).toBe("/admin");
+  });
+});
+
+describe("request bodies", () => {
+  it("refuses bodies over the cap, declared or streamed", async () => {
+    const { readCapped } = await import("@/lib/http");
+    await expect(readCapped(new Request("https://k/x", { method: "POST", headers: { "content-length": "999999" }, body: "x" }), 1024)).rejects.toMatchObject({ status: 413 });
+    const stream = new ReadableStream({ start(c) { for (let i = 0; i < 10; i++) c.enqueue(new Uint8Array(512)); c.close(); } });
+    await expect(readCapped(new Request("https://k/x", { method: "POST", body: stream, duplex: "half" } as RequestInit), 1024)).rejects.toMatchObject({ status: 413 });
+    expect(await readCapped(new Request("https://k/x", { method: "POST", body: "hello" }), 1024)).toBe("hello");
+  });
+});

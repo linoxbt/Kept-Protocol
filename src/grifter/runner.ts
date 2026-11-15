@@ -7,7 +7,7 @@ import { FixtureChain } from "@/chain/fixture";
 import { METHOD_VERSIONS, runMethod } from "@/core/methods";
 import { deriveStatus } from "@/core/status";
 import type { Evidence } from "@/core/types";
-import { runExtraction } from "@/extraction/pipeline";
+import { runExtraction, type PipelineDeps } from "@/extraction/pipeline";
 import { buildSpec } from "@/extraction/spec";
 import { FixtureServClient, type ServClient, type ServRequest } from "@/serv/client";
 import { PROMPTS } from "@/serv/prompts";
@@ -82,9 +82,9 @@ function liveFailures(c: ExtractionCase, result: Awaited<ReturnType<typeof runEx
   return failures;
 }
 
-async function runExtractionCase(c: ExtractionCase, serv: ServClient): Promise<CaseResult> {
+async function runExtractionCase(c: ExtractionCase, serv: ServClient, budget?: Pick<PipelineDeps, "meter" | "reserve">): Promise<CaseResult> {
   const failures: string[] = [];
-  const result = await runExtraction(c.source, { name: "Demo Labs", chainId: 8453, tokenAddress: "0x1111111111111111111111111111111111111111", tokenSymbol: "DEMO" }, { serv, meter: async () => {} });
+  const result = await runExtraction(c.source, { name: "Demo Labs", chainId: 8453, tokenAddress: "0x1111111111111111111111111111111111111111", tokenSymbol: "DEMO" }, { serv, meter: budget?.meter ?? (async () => {}), reserve: budget?.reserve });
   if (serv.live) {
     const lf = liveFailures(c, result);
     return { id: c.id, family: c.family, title: c.title, severity: c.severity, layer: c.layer, passed: lf.length === 0, failures: lf, observed: { source_flags: result.source_flags, drafts: result.drafts.map((d) => ({ quote: d.quote.slice(0, 120), flags: d.flags, fields: d.fields })), dropped: result.dropped_spans } };
@@ -168,12 +168,16 @@ async function runChainCase(c: ChainCase): Promise<CaseResult> {
   };
 }
 
-export async function runGrifter(opts: { live?: ServClient; cases?: GrifterCase[] } = {}): Promise<GrifterReport> {
+/**
+ * Offline runs use the fooled fixture model and touch nothing else. Live runs pass `budget` so every
+ * SERV call is metered and held against the daily budget like any other extraction.
+ */
+export async function runGrifter(opts: { live?: ServClient; cases?: GrifterCase[]; budget?: Pick<PipelineDeps, "meter" | "reserve"> } = {}): Promise<GrifterReport> {
   const cases = opts.cases ?? CASES;
   const results: CaseResult[] = [];
   for (const c of cases) {
     try {
-      results.push(c.kind === "extraction" ? await runExtractionCase(c, opts.live ?? fooledModel(c)) : await runChainCase(c));
+      results.push(c.kind === "extraction" ? await runExtractionCase(c, opts.live ?? fooledModel(c), opts.live ? opts.budget : undefined) : await runChainCase(c));
     } catch (e) {
       results.push({ id: c.id, family: c.family, title: c.title, severity: c.severity, layer: c.layer, passed: false, failures: [`runner error: ${e instanceof Error ? e.message : e}`], observed: {} });
     }

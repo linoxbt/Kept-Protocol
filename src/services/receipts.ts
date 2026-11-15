@@ -12,7 +12,10 @@ export interface StoredReceipt extends SignedReceipt {
 
 /**
  * Signs and stores a receipt inside the caller's transaction. The caller must hold a row lock on
- * the commitment so the hash chain (prev_sha256) cannot fork under concurrent checks.
+ * the commitment so the hash chain (prev_sha256) cannot fork under concurrent checks. created_at is
+ * the INSERT time (clock_timestamp), not the transaction's start (now()): a transaction that began
+ * first but got the lock second would otherwise sort before the receipt it chained to, and the next
+ * receipt would chain to the wrong head.
  */
 export async function insertReceipt(tx: Q, body: Omit<ReceiptBody, "signer" | "prev_sha256" | "receipt_id">): Promise<StoredReceipt> {
   const id = newId("kr");
@@ -22,9 +25,10 @@ export async function insertReceipt(tx: Q, body: Omit<ReceiptBody, "signer" | "p
   const signed = await signReceipt({ ...body, receipt_id: id, prev_sha256: prev[0]?.sha256 ?? null }, getSigner());
   const canonical = canonicalJson(signed.body);
   const [row] = await tx<{ created_at: Date }[]>`
-    insert into receipts (id, kind, commitment_id, version, body, canonical, sha256, prev_sha256, signature, signer)
+    insert into receipts (id, kind, commitment_id, version, body, canonical, sha256, prev_sha256, signature, signer, created_at)
     values (${id}, ${signed.body.kind}, ${signed.body.commitment_id}, ${signed.body.commitment_version},
-            ${tx.json(JSON.parse(canonical))}, ${canonical}, ${signed.sha256}, ${signed.body.prev_sha256}, ${signed.signature}, ${signed.body.signer})
+            ${tx.json(JSON.parse(canonical))}, ${canonical}, ${signed.sha256}, ${signed.body.prev_sha256}, ${signed.signature}, ${signed.body.signer},
+            clock_timestamp())
     returning created_at`;
   return { ...signed, id, anchor_id: null, leaf_index: null, created_at: row.created_at };
 }

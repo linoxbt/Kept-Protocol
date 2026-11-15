@@ -7,5 +7,8 @@ COPY tsconfig.json ./
 COPY src ./src
 COPY scripts ./scripts
 ENV NODE_ENV=production
-# Apply migrations, then tick every KEPT_TICK_SECONDS.
-CMD ["sh", "-c", "npx tsx scripts/migrate.ts && npx tsx scripts/worker.ts"]
+# Node is PID 1 (no shell in between), so SIGTERM reaches the worker's handler and it finishes the
+# current tick before exiting. The worker applies migrations itself, then ticks every
+# KEPT_TICK_SECONDS. Runs as the unprivileged "node" user.
+USER node
+CMD ["node", "--import", "tsx", "scripts/worker.ts"]

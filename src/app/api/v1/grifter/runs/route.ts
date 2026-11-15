@@ -4,7 +4,7 @@ import { requireAdmin } from "@/lib/auth";
 import { json, route } from "@/lib/http";
 import { newId } from "@/lib/ids";
 import { runGrifter } from "@/grifter/runner";
-import { servClient } from "@/services/serv";
+import { budgetedDeps, servClient } from "@/services/serv";
 import { startJob } from "@/services/jobs";
 
 export const maxDuration = 300;
@@ -15,7 +15,7 @@ export const POST = route(async (req: Request) => {
   const live = new URL(req.url).searchParams.get("live") === "1" ? (servClient() ?? undefined) : undefined;
   // A live run sends every case to SERV (minutes): always run in the background and poll the job.
   const job = await startJob("grifter", live ? "live" : "offline", async () => {
-    const report = await runGrifter({ live });
+    const report = await runGrifter({ live, budget: live ? budgetedDeps(null) : undefined });
     const id = newId("kg");
     const sql = db();
     await sql`insert into grifter_runs (id, mode, prompt_versions, method_versions, summary, results)

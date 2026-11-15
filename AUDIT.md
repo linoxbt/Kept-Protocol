@@ -45,3 +45,48 @@ provide; the code side is done.
 | P5 | Low | Hero canvas always animating | Fixed | ~30 fps, stops off-screen and in hidden tabs, static under reduced motion. |
 | P6 | Low | Two hops (Netlify → Railway) | Accepted | Kept as the public domain; static assets are immutable-cached by browsers. |
 | N1 | Medium | Netlify edge token header not deployed | Fixed | Netlify now adds `x-kept-edge` to every proxied request (deployed through Netlify's build with the generated config; the token is not in the repository and is not served). `KEPT_EDGE_STRICT=1` on kept-web: only requests carrying the token get Netlify's client IP; a direct call to the Railway origin with a forged header falls back to Railway's own `x-real-ip`. |
+
+---
+
+## Second audit, 14 November 2026
+
+An independent review (five reviewers, none anchored on the first audit) found new problems. Status
+of each, as of 15 November. **Fixed** means changed, tested, pushed and deployed.
+
+| ID | Severity | Finding | Status | How |
+|---|---|---|---|---|
+| S1 | Critical | SERV key pasted in chat (same as S0) | **Needs owner** | Rotate at console.openserv.ai; set on both Railway services. |
+| S2 | High | One hostile page froze the process (quadratic HTML regexes) | Fixed | Linear HTML-to-text, byte-identical output (5,000 randomized cases and the live Degen and Alien Base pages, so content hashes are unchanged); 10 MB hostile pages under 0.6 s. |
+| S3 | High | SERV daily budget could be overspent | Fixed | Every call reserves its worst-case cost under an advisory lock before it is sent; feature charges budgeted; failed calls charged; unpriced models refused; live Grifter metered. Test: 40 concurrent reservations, room for 7, exactly 7 held. |
+| S4 | Medium | Sign-in limiter raceable; scrypt blocked the event loop; easy global lockout | Fixed | Atomic count-before-check (30 parallel guesses, exactly 10 checked); async scrypt; global ceiling 300 per 15 min. |
+| S5 | Medium | IPv6 clients bypassed per-IP limits | Fixed | Limits key IPv6 on its /64. |
+| S6 | Medium | No body size cap; idempotency table unbounded and shared by anonymous callers | Fixed | 256 KB JSON / 16 KB forms (413, verified live); idempotency only for authenticated 2xx, claimed before running, 24 h TTL. |
+| S7 | Low-Medium | Public disputes unmoderated; evidence URLs accept `javascript:` | Fixed | http(s) links only; open and rejected disputes are shown as facts, their text only once accepted. |
+| S8 | Low | Open redirect after sign-in | Fixed | Redirect must resolve to a path on this site. |
+| S9 | Low | Hardening gaps (CSP inline scripts, web holds operator key, worker as root) | Partly fixed | Worker runs as `node`; CSP nonces and moving the operator key out of the web process are open. |
+| B1 | High | Breach blamed on the transfer that crossed the aggregate threshold | Fixed | Breach needs breach-capable subjects' own outflow to exceed the limit; the second provider confirms every transfer in the proof. |
+| B2 | High | Vesting had zero tolerance (730-day contract vs. "24 months" = Breached) | Fixed | `vesting_schedule_v1` v2 allows max(1 day, 0.5% of duration); genuinely early releases still breach. |
+| B3 | High | kept-verify and browser verify trusted the receipt's own signer and Kept's Merkle data | Fixed | Signer pinned (`--signer` or the agent card; dev key rejected); leaf = recomputed hash; root read from the EAS attestation on Base via the user's RPC. Verified on a live receipt. |
+| B4 | Medium | Precedent diff missed internal-address and attribution changes | Fixed | Internal addresses, per-subject attribution, decimals and chain are policy fields. |
+| B5 | High | Hindcast replayed unscanned history and forced "confirmed" | Fixed | Replays stop where scanned evidence stops; receipts state they were not re-confirmed. |
+| B6 | Medium | Standing breach depended on the recorded status | Fixed | Earlier versions are evaluated over the evidence before their replacement; a confirmed violation stands, an unconfirmed one keeps At risk. |
+| B7 | Medium | Burning locked tokens counted as a lock breach | Fixed | `erc20_outflow_v1` v2 notes burns instead of counting them. |
+| B8 | Medium | Degen burn target has thin margin over "about 5 million a day" | Open | Needs a stated tolerance in the curated entry. |
+| B9 | Medium | Demo history shows a Breached → Verified flip from before the standing-breach rule | Disclosed | Stated in SUBMISSION; the log is append-only by design. |
+| B10 | High | Background work orphaned by restarts stayed "running" forever; worker ignored SIGTERM | Fixed | 30 s heartbeats, monitor fails work silent for 3 min; node is PID 1 and stops cleanly (seen in production logs). |
+| B11 | Medium | Advisory locks over a pool; anchoring not idempotent | Fixed | Locks on one reserved connection; the signed attestation hash is recorded before broadcast and reconciled by hash. |
+| B12 | Medium | Check lease could expire mid-check; hash chain could fork | Partly fixed | Receipts use clock_timestamp(), so the chain stays linear; a recount deadline and lease renewal are open. |
+| B13 | Medium | Partial-evidence breach receipts recorded the covered range, not the computed range | Fixed | Computed over, and recorded as, the blocks up to the transfer that broke the limit. |
+| B14 | Medium | Confirming a draft twice created two commitments | Fixed | Refused with the existing id; unique index. |
+| B15 | Medium | Migrations raced web deploys | Fixed | Web migrates at boot, worker in-process, serialised by a lock. |
+| B17 | Medium | No error boundaries | Fixed | `error.tsx`, `global-error.tsx`, home sections degrade; verified by stopping Postgres. |
+| B18 | Medium | `/try?url=` re-ran a paid extraction on every load | Fixed | The URL becomes `/try?preview=<id>`. |
+| B19 | Medium/Low | Polling gave up on one transient 502 | Fixed | Retries transient errors. |
+| B21 | Low | Soft 404s; Hindcast page rendered for unknown ids | Partly fixed | Hindcast 404s; other pages still answer 200 with "No record here" and `noindex`. |
+| B22 | High | A model could skip grounding by naming a field in `derived` | Fixed | Only code-recomputable derivations accepted for model drafts. |
+| B23 | Medium-High | A page with many injection sentences produced zero drafts | Fixed | Locate output limits trim instead of rejecting. |
+| B20 | Medium | Deploys broke open tabs (chunk 404s) | Fixed | `deploymentId` = commit (version skew protection). |
+| R | Medium | Regression review of the fixes above (14 findings: >25-transfer proofs, stuck idempotency claims, admin-key bursts, Hindcast multi-version coverage, anchoring on RPC outages, and smaller items) | Fixed | All addressed in the following commit, with tests. |
+| — | High | Hindcast and Grifter empty on the live site | Fixed | The worker keeps one demo replay and one stored offline Grifter run. |
+| — | High | Fewer seeded real projects than the PRD's target | Open (by choice) | 2 real projects (3 commitments) plus the demo. About 90 Base projects were screened on 15 November; none met the bar (promise on the project's own served page, declared or attributable address, a stated amount or date, and no way to produce a false breach). The gap is stated in SUBMISSION. Attribution by transaction sender would make revenue-linked buybacks (e.g. Veranta's daily AVNT burn) checkable. |
+| — | Medium | Inaccurate claims in README and SUBMISSION | Fixed | Corrected (billing tiers, signatures, SERV stats, test count, demo history). |

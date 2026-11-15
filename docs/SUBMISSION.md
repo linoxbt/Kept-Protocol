@@ -59,19 +59,31 @@ method.
   "Unconfirmed preview", rate-limited and never published.
 - **Live demo on mainnet:** Kept's own labelled token, promise, breach and rewrite. It went
   Verified → At risk (unfinalized) → Breached (final, second-provider confirmed) → retroactive
-  revision flagged.
+  revision flagged, and its Hindcast replay shows both versions on one timeline: same evidence,
+  v1 Breached, v2 Verified. One honest note: the append-only history also shows a one-minute
+  Breached → Verified flip at 16:54 UTC on 13 November, recorded before the rule that a later
+  revision cannot undo a breach shipped; the rule restored the breach at 19:59 and holds it now.
+- **Real projects:** Degen's daily burn and Alien Base's migration locks (ALB and esALB) are
+  monitored on mainnet. Coverage is deliberately small: Kept only adds a promise when the project's
+  own page states it, the address is declared or independently attributed, and the check cannot
+  produce a false breach. We screened about 90 Base projects for this release; most promises had no
+  address, no amount, an unenforced lock, or burns routed through shared contracts, so they were not
+  added. A false "Breached" against a real team is the one mistake Kept is designed never to make.
 - **Disputes:** anyone can dispute a record; a reviewer decides, and every decision is public.
 - **Reviewer console:** review queue, manual drafts, webhooks, Grifter runs.
 - **Infrastructure:** security headers, rate limits on real client IPs, secrets encrypted at rest,
-  background jobs, append-only database tables. 67 automated tests and CI on every push.
+  background jobs, append-only database tables. 97 automated tests and CI on every push.
 
-**Revenue potential.** Four paying customer types, all wired:
+**Revenue potential.** One paid flow is live today; three more are priced for the first pilots:
 
-- **Agents:** pay per query over x402. Live now: `exact` 0.01 USDC on Base mainnet. Responses are
+- **Agents (live):** pay per query over x402: `exact` 0.01 USDC on Base mainnet. Responses are
   signed and report `coverage: none | partial | full`, so "no record" is never read as "clean".
-- **Launchpads:** $1,200 per launched project per year for public promise pages and alerts.
-- **Pro users:** $49 per month for watchlists, alerts, Hindcast and exports.
-- **Data buyers:** $2,000+ per month for bulk API and history.
+- **Launchpads (pilot pricing):** $1,200 per launched project per year for public promise pages and alerts.
+- **Pro users (pilot pricing):** $49 per month for watchlists, alerts, Hindcast and exports.
+- **Data buyers (pilot pricing):** $2,000+ per month for bulk API and history.
+
+Billing for the three pilot tiers is not built yet; the prices are the hypotheses the first
+launchpad pilot will test.
 
 ---
 
@@ -87,7 +99,7 @@ method.
 4. **1:30. The catch.** The retroactive-revision banner, "see how the promise changed" (word diff),
    the breach still standing, and the Hindcast lanes.
 5. **1:55. Trust nothing.** Open a receipt, press "Verify in this browser", then run
-   `npm run verify-receipt` in a terminal: hash ✓, signer ✓, Merkle inclusion on Base ✓, rerun ✓.
+   `npm run verify-receipt -- <receipt URL>` in a terminal: hash ✓, signer = published signer ✓, Merkle leaf and proof ✓, root attested in the EAS attestation read from your own RPC ✓, rerun ✓.
 6. **2:20. Revenue.** `curl` the agent endpoint and show the 402 with USDC on Base mainnet. Close on
    the pricing section.
 
