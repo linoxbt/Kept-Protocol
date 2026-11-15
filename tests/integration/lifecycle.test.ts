@@ -12,12 +12,13 @@ import { resetEnvCache } from "@/lib/env";
 import { checkReceipt } from "@/receipts/receipt";
 import { verifyProof } from "@/receipts/merkle";
 import { merkleProof } from "@/receipts/merkle";
-import { FixtureServClient, type ServRequest } from "@/serv/client";
+import { FixtureServClient, worstCaseCostUsd, type ServRequest } from "@/serv/client";
+import { PROMPTS } from "@/serv/prompts";
 import { confirmDraft, createManualDraft, runAndStoreExtraction } from "@/services/extractions";
 import { confirmVersion, diffVersions, recaptureSource } from "@/services/precedent";
 import { runHindcastFor } from "@/services/hindcast";
 import { getReceipt } from "@/services/receipts";
-import { setServClient } from "@/services/serv";
+import { meterFor, reserveServCall, setServClient } from "@/services/serv";
 import { addSource, captureForSource, createProject, storeSnapshot } from "@/services/sources";
 import { runCheck } from "@/services/verify";
 import { pendingRoot } from "@/services/anchor";
@@ -365,5 +366,39 @@ describe.skipIf(!DB_UP)("Kept lifecycle", () => {
     expect(r.decision).toMatchObject({ status: "breached", final: true });
     expect(r.decision.reason).toMatch(/^Breached under v1: 4,000,000 XYZ left/);
     expect(r.decision.reason).toMatch(/revised afterwards \(v2\); a later revision does not undo a breach/);
+  });
+
+  it("holds SERV budget atomically: concurrent reservations never exceed the daily budget", async () => {
+    const saved = process.env.SERV_DAILY_BUDGET_USD;
+    try {
+      await sql`truncate serv_budget_holds`;
+      await sql`update serv_calls set created_at = now() - interval '2 days'`;
+      const req = { callSite: "extract", model: "gpt-5.4-mini-serv-kronos", prompt: PROMPTS.extract, user: "x".repeat(3000), jsonSchema: { name: "x", strict: true, schema: {} }, servTools: [{ kind: "shadow_agent", hint: "h", maxIterations: 2 }], maxTokens: 2000 } as ServRequest;
+      const each = worstCaseCostUsd(req)!;
+      expect(each).toBeGreaterThan(0);
+      // Room for exactly 7 calls; 40 race for it.
+      process.env.SERV_DAILY_BUDGET_USD = String(each * 7.5);
+      resetEnvCache();
+      const results = await Promise.allSettled(Array.from({ length: 40 }, () => reserveServCall(req, sql)));
+      const held = results.filter((r) => r.status === "fulfilled");
+      expect(held).toHaveLength(7);
+      expect(results.filter((r) => r.status === "rejected").every((r) => /daily SERV budget reached/.test(String((r as PromiseRejectedResult).reason)))).toBe(true);
+
+      // Metering a failed call releases its hold but charges the worst case (it may have been billed).
+      const hold = (held[0] as PromiseFulfilledResult<{ id: string; amountUsd: number }>).value;
+      await meterFor(null, sql)({ callSite: "extract", model: req.model, promptVersion: "v", promptSha256: "s", response: null, outcome: "error", error: "timeout", servTools: 1, hold });
+      const [{ n }] = await sql<{ n: number }[]>`select count(*)::int as n from serv_budget_holds`;
+      expect(n).toBe(6);
+      const [row] = await sql<{ est_cost_usd: string }[]>`select est_cost_usd from serv_calls where error = 'timeout' order by created_at desc limit 1`;
+      expect(Number(row.est_cost_usd)).toBeCloseTo(each, 5);
+
+      // A model without a known price is refused instead of being counted as free.
+      await expect(reserveServCall({ ...req, model: "gpt-9-unknown" }, sql)).rejects.toThrow(/no price is configured/);
+    } finally {
+      if (saved === undefined) delete process.env.SERV_DAILY_BUDGET_USD;
+      else process.env.SERV_DAILY_BUDGET_USD = saved;
+      resetEnvCache();
+      await sql`truncate serv_budget_holds`;
+    }
   });
 });

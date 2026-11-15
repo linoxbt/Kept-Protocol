@@ -4,13 +4,27 @@
  * Several workers can run at once; checks are claimed with SKIP LOCKED.
  */
 import { closeDb } from "../src/db/client";
+import { migrate } from "../src/db/migrate";
 import { assertProductionEnv } from "../src/lib/env";
 import { bootstrapSecrets } from "../src/lib/secrets";
 import { tick } from "../src/services/monitor";
 
 
-const every = Number(process.env.KEPT_TICK_SECONDS ?? 60) * 1000;
+// An empty or invalid value falls back to 60 s (Number("") is 0, which would spin).
+const every = (Number(process.env.KEPT_TICK_SECONDS) > 0 ? Number(process.env.KEPT_TICK_SECONDS) : 60) * 1000;
 let stopping = false;
+let wake: (() => void) | null = null;
+
+/** Sleep that a shutdown signal can cut short. */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const t = setTimeout(resolve, ms);
+    wake = () => {
+      clearTimeout(t);
+      resolve();
+    };
+  });
+}
 
 async function loop() {
   while (!stopping) {
@@ -26,15 +40,24 @@ async function loop() {
       console.error("tick failed", e);
     }
     const wait = every - (Date.now() - t0);
-    if (wait > 0 && !stopping) await new Promise((r) => setTimeout(r, wait));
+    if (wait > 0 && !stopping) await sleep(wait);
   }
   await closeDb();
+  console.log("worker stopped cleanly");
 }
 
-for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => (stopping = true));
+// Finish the current tick (claims are released by its own transactions), then exit. This runs
+// because node is PID 1 in the container (no shell in between to swallow the signal).
+for (const sig of ["SIGINT", "SIGTERM"])
+  process.on(sig, () => {
+    stopping = true;
+    wake?.();
+  });
 
-// Load the deployment's own secrets, then refuse to sign with the public development key.
-bootstrapSecrets()
+// Migrate (under a lock shared with the web service), load the deployment's own secrets, then
+// refuse to sign with the public development key.
+(process.env.DATABASE_URL ? migrate(process.env.DATABASE_URL) : Promise.resolve([]))
+  .then(() => bootstrapSecrets())
   .then(() => {
     assertProductionEnv();
     return loop();

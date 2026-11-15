@@ -220,8 +220,33 @@ export function baseModel(model: string): string {
   return model.replace(/-serv-(kronos-multipath|multipath-kronos|kronos|multipath)$/, "");
 }
 
-export function estimateCostUsd(model: string, usage: { input_tokens: number; output_tokens: number } | null): number {
+/**
+ * SERV bills its features (reasoning-prompt generation, prompt guard, Kronos audit and repair,
+ * Shadow Agent judges and revisions) on top of the base model. Kept does not know those rates
+ * exactly, so it budgets conservatively: 3x for a -serv-* variant and 2x more when serv_* tools
+ * are attached. Over-estimating only makes the daily budget stop earlier.
+ */
+export function featureMultiplier(model: string, servTools: number): number {
+  return (model === baseModel(model) ? 1 : 3) * (servTools > 0 ? 2 : 1);
+}
+
+export function isPriced(model: string): boolean {
+  return baseModel(model) in MODEL_PRICES;
+}
+
+export function estimateCostUsd(model: string, usage: { input_tokens: number; output_tokens: number } | null, multiplier = 1): number {
   const p = MODEL_PRICES[baseModel(model)];
   if (!p || !usage) return 0;
-  return (usage.input_tokens * p.input + usage.output_tokens * p.output) / 1_000_000;
+  return ((usage.input_tokens * p.input + usage.output_tokens * p.output) / 1_000_000) * multiplier;
+}
+
+/**
+ * Upper bound for one call: the whole prompt at about 3 characters per token (tokenizers average
+ * closer to 4 for English) plus the full output allowance, with feature charges. Null when the
+ * model has no known price: callers must refuse to call it rather than count it as free.
+ */
+export function worstCaseCostUsd(req: Pick<ServRequest, "model" | "prompt" | "user" | "maxTokens" | "servTools">): number | null {
+  if (!isPriced(req.model)) return null;
+  const inputTokens = Math.ceil((req.prompt.text.length + req.user.length) / 3) + 500;
+  return estimateCostUsd(req.model, { input_tokens: inputTokens, output_tokens: req.maxTokens }, featureMultiplier(req.model, req.servTools.length));
 }
