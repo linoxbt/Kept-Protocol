@@ -12,7 +12,7 @@ export const FUNDING_GRACE_SECONDS = 7 * DAY;
 
 export const METHOD_VERSIONS: Record<MethodId, number> = {
   erc20_outflow_v1: 1,
-  vesting_schedule_v1: 1,
+  vesting_schedule_v1: 2,
   burn_v1: 1,
 };
 
@@ -102,6 +102,19 @@ export function erc20OutflowV1(spec: CommitmentSpec, ev: Evidence): MethodResult
   };
 }
 
+/**
+ * Slack applied to the stated vesting schedule (v2). A promise says "24 months"; a contract counts
+ * fixed seconds (730 days), starts at its own block time (a TGE hours before UTC midnight), and a
+ * 12-month cliff spans 365 or 366 days. Without slack, a contract that matches the promise in every
+ * practical sense releases a hair faster than the calendar reading at every moment and would be
+ * reported as a breach. Releases are compared against the stated schedule evaluated `slack` seconds
+ * later: the larger of one day and 0.5% of the stated duration.
+ */
+export function vestingSlackSeconds(spec: CommitmentSpec): number {
+  if (!spec.vesting) return 0;
+  return Math.max(86_400, Math.round(spec.vesting.duration_seconds * 0.005));
+}
+
 /** Amount the stated schedule allows to be released by time t (linear after the cliff). */
 export function statedVestedAt(spec: CommitmentSpec, t: number): bigint {
   if (!spec.vesting) return 0n;
@@ -131,6 +144,8 @@ export function vestingScheduleV1(spec: CommitmentSpec, ev: Evidence): MethodRes
   const statedStart = ts(spec.vesting.start);
   const statedEnd = statedStart + spec.vesting.duration_seconds;
   const allocation = BigInt(spec.threshold_base_units);
+  const slack = vestingSlackSeconds(spec);
+  if (slack > 0) notes.push(`releases are compared with the stated schedule allowing ${Math.round(slack / 3600)} h of slack (calendar months vs. contract seconds)`);
 
   const releases = orderTransfers(
     ev.transfers.filter((t) => lc(t.token) === token && lc(t.from) === contract && t.blockTime >= ts(spec.window.start)),
@@ -139,7 +154,7 @@ export function vestingScheduleV1(spec: CommitmentSpec, ev: Evidence): MethodRes
   let firstBad = -1;
   releases.forEach((t, i) => {
     released += t.amount;
-    if (firstBad < 0 && released > statedVestedAt(spec, t.blockTime)) firstBad = i;
+    if (firstBad < 0 && released > statedVestedAt(spec, t.blockTime + slack)) firstBad = i;
   });
 
   if (ev.vesting) {
@@ -147,7 +162,7 @@ export function vestingScheduleV1(spec: CommitmentSpec, ev: Evidence): MethodRes
     const contractEnd = r.start + r.duration;
     const statedCliffEnd = statedStart + spec.vesting.cliff_seconds;
     const contractCliffEnd = r.start + (r.cliff ?? 0);
-    if (r.start < statedStart || contractEnd < statedEnd || contractCliffEnd < statedCliffEnd) {
+    if (r.start + slack < statedStart || contractEnd + slack < statedEnd || contractCliffEnd + slack < statedCliffEnd) {
       warnings.push({
         code: "SCHEDULE_FASTER_THAN_STATED",
         detail: `contract schedule ${iso(r.start)} → ${iso(contractEnd)} (cliff to ${iso(contractCliffEnd)}) is faster than stated ${iso(statedStart)} → ${iso(statedEnd)} (cliff to ${iso(statedCliffEnd)})`,

@@ -105,7 +105,7 @@ export async function createManualDraft(
   const fields = parsed.data;
   const end = start + input.quote.length;
   const context = snap.text.slice(Math.max(0, start - 1000), Math.min(snap.text.length, end + 1000));
-  const grounding = checkGrounding(fields, input.quote, context);
+  const grounding = checkGrounding(fields, input.quote, context, { derivedBy: "reviewer" });
   const rules = classifyByRules(fields, input.quote);
   const draft: Draft = {
     index: 0,
@@ -204,8 +204,8 @@ export async function prepareSpec(req: ConfirmRequest, sql: Sql = db(), opts: { 
   const merged = ExtractOut.safeParse({ ...draft.fields, ...(req.edits ?? {}) });
   if (!merged.success) throw new Invalid(merged.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "));
   if (req.edits && Object.keys(req.edits).length) {
-    const before = new Set(checkGrounding(draft.fields, draft.quote, draft.context).flags.filter((f) => f.startsWith("UNGROUNDED")));
-    const after = checkGrounding(merged.data, draft.quote, draft.context).flags.filter((f) => f.startsWith("UNGROUNDED") && !before.has(f));
+    const before = new Set(checkGrounding(draft.fields, draft.quote, draft.context, { derivedBy: "reviewer" }).flags.filter((f) => f.startsWith("UNGROUNDED")));
+    const after = checkGrounding(merged.data, draft.quote, draft.context, { derivedBy: "reviewer" }).flags.filter((f) => f.startsWith("UNGROUNDED") && !before.has(f));
     if (after.length) throw new Conflict(`edits must match the source text (${after.join(", ")}); publish a new source or declare the value as derived`);
   }
   const fields = merged.data;

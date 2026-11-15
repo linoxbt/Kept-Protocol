@@ -137,6 +137,43 @@ export function addressesInText(text: string): Set<string> {
   return new Set([...text.matchAll(/0x[0-9a-fA-F]{40}\b/g)].map((m) => m[0].toLowerCase()));
 }
 
+/** Calendar month arithmetic on YYYY-MM-DD (clamped to the month's last day). */
+function addMonthsIso(iso: string, months: number): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  const day = d.getUTCDate();
+  d.setUTCDate(1);
+  d.setUTCMonth(d.getUTCMonth() + months);
+  const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+  d.setUTCDate(Math.min(day, last));
+  return d.toISOString().slice(0, 10);
+}
+
+/** A real calendar date: V8's Date.parse accepts "2025-02-30", so round-trip it. */
+function isCalendarDate(v: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const d = new Date(`${v}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+}
+
+/**
+ * Which `derived` entries code can actually recompute from grounded values. A model's "derived"
+ * label is a claim, not evidence: only a window edge equal to the other (grounded) edge plus or
+ * minus a grounded duration in months is accepted. Numbers written with a suffix ("5M") or in
+ * years ("2 years" = 24 months) are already grounded directly and need no derivation.
+ */
+function recomputableDerived(draft: ExtractOut, nums: Set<string>, dates: Set<string>): Set<string> {
+  const ok = new Set<string>();
+  const months = draft.duration_months;
+  const monthsGrounded = months !== null && months !== undefined && Number.isInteger(months) && nums.has(String(months));
+  if (!monthsGrounded) return ok;
+  const { window_start: s, window_end: e } = draft;
+  if (s && e && isCalendarDate(s) && isCalendarDate(e)) {
+    if (dates.has(s) && addMonthsIso(s, months) === e) ok.add("window_end");
+    if (dates.has(e) && addMonthsIso(e, -months) === s) ok.add("window_start");
+  }
+  return ok;
+}
+
 export interface GroundingResult {
   flags: Flag[];
   problems: string[];
@@ -146,15 +183,24 @@ export interface GroundingResult {
  * Every number, date and address in the structured fields must appear in the excerpt or its
  * context, or carry a `derived` entry that explains how it was computed.
  */
-export function checkGrounding(draft: ExtractOut, excerpt: string, context: string): GroundingResult {
+export function checkGrounding(
+  draft: ExtractOut,
+  excerpt: string,
+  context: string,
+  opts: { derivedBy: "model" | "reviewer" } = { derivedBy: "model" },
+): GroundingResult {
   const flags = new Set<Flag>();
   const problems: string[] = [];
   const src = `${excerpt}\n${context}`;
   const nums = numbersInText(src);
   const dates = datesInText(src);
   const addrs = addressesInText(src);
-  const derived = new Set(draft.derived.map((d) => d.field));
+  // A reviewer's derivation is an accountable human statement (shown with its rule and flagged);
+  // a model's is accepted only where code recomputes it.
+  const claimed = new Set(draft.derived.map((d) => d.field));
+  const derived = opts.derivedBy === "reviewer" ? claimed : recomputableDerived(draft, nums, dates);
   if (draft.derived.length) flags.add("DERIVED_VALUE");
+  for (const f of claimed) if (!derived.has(f)) problems.push(`${f} is marked as derived, but code cannot recompute it from the excerpt`);
 
   const checkNum = (field: string, v: string | number | null) => {
     if (v === null || v === undefined) return;
@@ -171,7 +217,7 @@ export function checkGrounding(draft: ExtractOut, excerpt: string, context: stri
   for (const field of ["window_start", "window_end"] as const) {
     const v = draft[field];
     if (!v) continue;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(v) || Number.isNaN(Date.parse(v))) {
+    if (!isCalendarDate(v)) {
       flags.add("UNGROUNDED_DATE");
       problems.push(`${field} = ${v} is not an ISO calendar date`);
     } else if (!dates.has(v) && !derived.has(field)) {

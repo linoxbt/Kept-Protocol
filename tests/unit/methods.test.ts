@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { burnV1, erc20OutflowV1, statedVestedAt, vestingScheduleV1 } from "@/core/methods";
-import { deriveStatus } from "@/core/status";
+import { breachProof, deriveStatus } from "@/core/status";
 import { toBaseUnits, formatUnits } from "@/core/amounts";
 import { BUYER, DEAD, E18, TEAM, TEAM2, VESTING, evidence, lockSpec, t, transfer } from "../fixtures";
 
@@ -162,5 +162,84 @@ describe("burn_v1", () => {
     const closed = burnV1(spec, evidence([transfer({ from: TEAM, to: DEAD, amount: 10n * E18, at: "2026-02-01" })], "2026-04-02"));
     expect(closed.outcome).toBe("violated");
     expect(deriveStatus(spec, closed, "confirmed").status).toBe("breached");
+  });
+});
+
+describe("breach attribution with several subjects (audit B1)", () => {
+  const declared = { level: "declared_by_project" as const, evidence: null, confirmed_by: null };
+  const unconfirmed = { level: "unconfirmed" as const, evidence: null, confirmed_by: null };
+  const spec = lockSpec({
+    threshold: "1000000",
+    threshold_base_units: (1_000_000n * E18).toString(),
+    subjects: [
+      { address: TEAM, role: "holder", label: null, attribution: declared },
+      { address: TEAM2, role: "holder", label: null, attribution: unconfirmed },
+    ],
+  });
+
+  it("does not blame a declared address for an unconfirmed address's outflow", () => {
+    const r = erc20OutflowV1(spec, evidence([
+      transfer({ from: TEAM2, to: BUYER, amount: 1_000_000n * E18, at: "2026-05-01" }),
+      transfer({ from: TEAM, to: BUYER, amount: 1n * E18, at: "2026-05-02" }),
+    ], "2026-06-01"));
+    expect(r.outcome).toBe("violated");
+    expect(r.violating[0].from.toLowerCase()).toBe(TEAM.toLowerCase());
+    expect(breachProof(spec, r)).toBeNull();
+    const d = deriveStatus(spec, r, "confirmed");
+    expect(d.status).toBe("at_risk");
+    expect(d.reason).toMatch(/confirmed attribution stayed within the limit/);
+  });
+
+  it("still breaches when a declared address's own outflow exceeds the limit, even if an unconfirmed one crossed first", () => {
+    const r = erc20OutflowV1(spec, evidence([
+      transfer({ from: TEAM2, to: BUYER, amount: 2_000_000n * E18, at: "2026-05-01" }),
+      transfer({ from: TEAM, to: BUYER, amount: 5_000_000n * E18, at: "2026-05-02" }),
+    ], "2026-06-01"));
+    expect(r.violating[0].from.toLowerCase()).toBe(TEAM2.toLowerCase());
+    const proof = breachProof(spec, r)!;
+    expect(proof.subject.address).toBe(TEAM);
+    expect(deriveStatus(spec, r, "confirmed")).toMatchObject({ status: "breached", final: true });
+  });
+
+  it("proves a breach with every transfer that built the total, not only the crossing one", () => {
+    const r = erc20OutflowV1(spec, evidence([
+      transfer({ from: TEAM, to: BUYER, amount: 600_000n * E18, at: "2026-05-01" }),
+      transfer({ from: TEAM, to: BUYER, amount: 600_000n * E18, at: "2026-05-02" }),
+    ], "2026-06-01"));
+    expect(r.violating).toHaveLength(1);
+    expect(breachProof(spec, r)!.transfers).toHaveLength(2);
+  });
+});
+
+describe("vesting tolerance (audit B2, method v2)", () => {
+  const A = 1_000_000n * E18;
+  const start = "2027-06-01T00:00:00.000Z";
+  // "24 months from 2027-06-01" read as calendar time: 731 days.
+  const spec = lockSpec({
+    category: "vesting",
+    method_id: "vesting_schedule_v1",
+    comparator: "gte",
+    threshold: "1000000",
+    threshold_base_units: A.toString(),
+    subjects: [{ address: VESTING, role: "vesting", label: null, attribution: { level: "declared_by_project", evidence: null, confirmed_by: null } }],
+    vesting: { contract: VESTING, start, cliff_seconds: 0, duration_seconds: 731 * 86400 },
+    window: { start, end: "2029-06-01T00:00:00.000Z" },
+  });
+  const contract = { start: t("2027-06-01"), duration: 730 * 86400, cliff: 0, beneficiary: TEAM, funded: A };
+  const vestedByContract = (at: string) => (A * BigInt(t(at) - t("2027-06-01"))) / BigInt(730 * 86400);
+
+  it("does not report a standard 730-day VestingWallet as a breach of a 24-month promise", () => {
+    const at = "2027-09-09";
+    const r = vestingScheduleV1(spec, evidence([transfer({ from: VESTING, to: TEAM, amount: vestedByContract(at), at })], "2027-10-01", { vesting: contract }));
+    expect(r.outcome).toBe("in_progress");
+    expect(r.warnings.map((w) => w.code)).not.toContain("SCHEDULE_FASTER_THAN_STATED");
+    expect(deriveStatus(spec, r, "confirmed").status).toBe("verified");
+  });
+
+  it("still breaches on a genuinely early release", () => {
+    const at = "2027-09-09";
+    const r = vestingScheduleV1(spec, evidence([transfer({ from: VESTING, to: TEAM, amount: (vestedByContract(at) * 110n) / 100n, at })], "2027-10-01", { vesting: contract }));
+    expect(r.outcome).toBe("violated");
+    expect(deriveStatus(spec, r, "confirmed").status).toBe("breached");
   });
 });

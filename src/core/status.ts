@@ -4,7 +4,8 @@
  * and "Verified, final" are different claims.
  */
 import { formatUnits } from "./amounts";
-import type { AttributionLevel, CommitmentSpec, MethodResult, Status, Subject } from "./types";
+import { statedVestedAt, vestingSlackSeconds } from "./methods";
+import type { AttributionLevel, CommitmentSpec, MethodResult, Status, Subject, Transfer } from "./types";
 
 export type ProviderConfirmation = "confirmed" | "disagreed" | "unavailable" | "not_needed";
 
@@ -26,10 +27,65 @@ export function subjectFor(spec: CommitmentSpec, address: string | undefined): S
   return spec.subjects.find((s) => s.address.toLowerCase() === address.toLowerCase());
 }
 
+/** At most this many transfers are re-confirmed one by one on the second provider. */
+export const MAX_PROOF_TRANSFERS = 25;
+
+export interface BreachProof {
+  /** Transfers whose sum alone exceeds `limit`; all of them must be confirmed on the second provider. */
+  transfers: Transfer[];
+  limit: bigint;
+  subject: Subject;
+}
+
+/**
+ * The smallest set of transfers that, on its own, proves a violation, using ONLY subjects whose
+ * attribution can support a breach. Null when the breach-capable subjects' own outflow stays
+ * within the limit: the excess then comes from addresses with unconfirmed attribution, which can
+ * only ever produce At risk. (Deciding by the single transfer that crossed the aggregate threshold
+ * would let an unconfirmed address's outflow be blamed on a declared one, or hide a declared
+ * address's large outflow behind an unconfirmed address that crossed first.)
+ */
+export function breachProof(spec: CommitmentSpec, result: MethodResult): BreachProof | null {
+  if (result.outcome !== "violated" || result.violating.length === 0) return null;
+  const pickLargest = (candidates: Transfer[], limit: bigint, subject: Subject | undefined): BreachProof | null => {
+    if (!subject) return null;
+    const sorted = [...candidates].sort((a, b) => (b.amount > a.amount ? 1 : b.amount < a.amount ? -1 : 0));
+    const transfers: Transfer[] = [];
+    let sum = 0n;
+    for (const t of sorted) {
+      transfers.push(t);
+      sum += t.amount;
+      if (sum > limit) return { transfers, limit, subject };
+    }
+    return null;
+  };
+  if (spec.method_id === "vesting_schedule_v1") {
+    const subject = subjectFor(spec, spec.vesting?.contract);
+    if (!subject || !BREACH_CAPABLE.has(subject.attribution.level)) return null;
+    const crossing = result.violating[0];
+    const upTo = result.counted.slice(0, result.counted.indexOf(crossing) + 1);
+    return pickLargest(upTo, statedVestedAt(spec, crossing.blockTime + vestingSlackSeconds(spec)), subject);
+  }
+  if (spec.method_id === "erc20_outflow_v1") {
+    const limit = BigInt(result.threshold_base_units);
+    const capable = new Set(spec.subjects.filter((s) => BREACH_CAPABLE.has(s.attribution.level)).map((s) => s.address.toLowerCase()));
+    const own = result.counted.filter((t) => capable.has(t.from.toLowerCase()));
+    let running = 0n;
+    const crossing = own.findIndex((t) => (running += t.amount) > limit);
+    if (crossing < 0) return null;
+    const upTo = own.slice(0, crossing + 1);
+    return pickLargest(upTo, limit, subjectFor(spec, own[crossing].from));
+  }
+  return null;
+}
+
 /** The subject whose action (or inaction) decides a violation. */
 export function responsibleSubject(spec: CommitmentSpec, result: MethodResult): Subject | undefined {
   if (spec.method_id === "burn_v1") return subjectFor(spec, spec.burn?.executor);
   if (spec.method_id === "vesting_schedule_v1") return subjectFor(spec, spec.vesting?.contract);
+  // Outflows: a breach needs the breach-capable subjects' own outflow to exceed the limit.
+  const proof = breachProof(spec, result);
+  if (proof) return proof.subject;
   return subjectFor(spec, result.violating[0]?.from);
 }
 
@@ -51,6 +107,9 @@ export function deriveStatus(
       const what = violationSentence(spec, result);
       if (!BREACH_CAPABLE.has(level)) {
         return { status: "at_risk", final: false, reason: `${what}; attribution unconfirmed, so this cannot be a breach` };
+      }
+      if (spec.method_id !== "burn_v1" && !breachProof(spec, result)) {
+        return { status: "at_risk", final: false, reason: `${what}; addresses with confirmed attribution stayed within the limit (the excess left addresses whose attribution is unconfirmed), so this cannot be a breach` };
       }
       if (confirmation === "disagreed") {
         return { status: "at_risk", final: false, reason: `${what}; evidence providers disagree, incident opened` };

@@ -154,3 +154,27 @@ describe("condition sentence", () => {
     expect(spec?.condition_summary).toBe("No XYZ may leave 0x2222…2222 between 2026-03-01 and 2027-03-01.");
   });
 });
+
+describe("derived values (audit B22)", () => {
+  it("does not let a model skip grounding by labelling a number as derived", () => {
+    const g = checkGrounding(draft({ amount: "999999999", derived: [{ field: "amount", rule: "x" }] }), excerpt, "");
+    expect(g.flags).toContain("UNGROUNDED_NUMBER");
+    expect(g.problems.join(" ")).toMatch(/amount is marked as derived, but code cannot recompute it/);
+  });
+
+  it("rejects a derived window end that does not equal start + grounded duration", () => {
+    const g = checkGrounding(draft({ window_end: "2027-09-01", derived: [{ field: "window_end", rule: "start + 12 months" }] }), excerpt, "");
+    expect(g.flags).toContain("UNGROUNDED_DATE");
+  });
+
+  it("trusts a reviewer's declared derivation (an accountable human statement, still flagged)", () => {
+    const g = checkGrounding(draft({ amount: "895000000", derived: [{ field: "amount", rule: "5,000,000 x 179 days" }] }), excerpt, "", { derivedBy: "reviewer" });
+    expect(g.flags).toContain("DERIVED_VALUE");
+    expect(g.flags).not.toContain("UNGROUNDED_NUMBER");
+  });
+
+  it("rejects impossible calendar dates", () => {
+    const g = checkGrounding(draft({ window_start: "2026-02-30" }), "Locked from 2026-02-30 for 12 months.", "");
+    expect(g.flags).toContain("UNGROUNDED_DATE");
+  });
+});

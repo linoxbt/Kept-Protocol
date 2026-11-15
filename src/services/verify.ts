@@ -5,7 +5,7 @@
 import type { ChainAdapter } from "@/chain/adapter";
 import { getChain } from "@/chain";
 import { METHOD_VERSIONS, runMethod } from "@/core/methods";
-import { deriveStatus, type ProviderConfirmation, type StatusDecision } from "@/core/status";
+import { breachProof, MAX_PROOF_TRANSFERS, deriveStatus, type ProviderConfirmation, type StatusDecision } from "@/core/status";
 import type { CommitmentSpec, MethodResult, Transfer } from "@/core/types";
 import { db, type Q, type Sql } from "@/db/client";
 import { codeCommit } from "@/lib/env";
@@ -28,6 +28,7 @@ export const METHOD_LIMITATIONS: Record<string, string[]> = {
   vesting_schedule_v1: [
     "Releases are measured as Transfer logs out of the vesting contract.",
     "A contract schedule faster than stated is an early warning; it becomes a breach only when tokens actually leave early.",
+    "Releases are compared with the stated schedule allowing the larger of 1 day and 0.5% of its duration (calendar months vs. contract seconds, start-time offsets).",
   ],
   burn_v1: [
     "Only burns sent by the attributed executor to the zero or 0x…dEaD address count.",
@@ -116,11 +117,16 @@ export async function confirmViolation(
   if (result.outcome !== "violated") return { confirmation: "not_needed", detail: "no violation to confirm" };
   try {
     if (result.violating.length > 0) {
-      const sample = result.violating.slice(0, 3);
-      const ok = await Promise.all(sample.map((t) => confirm.confirmTransfer(t)));
+      // Confirm every transfer in the proof (the breach-capable transfers whose sum alone exceeds
+      // the limit), not just the one that crossed it: the earlier ones built the total.
+      const proof = breachProof(spec, result);
+      if (!proof) return { confirmation: "unavailable", detail: "no outflow from an address with confirmed attribution exceeds the limit on its own" };
+      if (proof.transfers.length > MAX_PROOF_TRANSFERS)
+        return { confirmation: "unavailable", detail: `the violation rests on ${proof.transfers.length} transfers; more than ${MAX_PROOF_TRANSFERS} cannot be re-confirmed one by one` };
+      const ok = await Promise.all(proof.transfers.map((t) => confirm.confirmTransfer(t)));
       return ok.every(Boolean)
-        ? { confirmation: "confirmed", detail: `${sample.length} violating transfer(s) independently confirmed at finalized blocks` }
-        : { confirmation: "disagreed", detail: "the confirmation provider could not reproduce a violating transfer" };
+        ? { confirmation: "confirmed", detail: `${proof.transfers.length} transfer(s) proving the violation independently confirmed at finalized blocks` }
+        : { confirmation: "disagreed", detail: "the confirmation provider could not reproduce a transfer the violation rests on" };
     }
     // A shortfall (absence of burns) is confirmed by a full, resumable recount on the second provider.
     return await recountShortfall(spec, result, collected, confirm, sql, budget);
