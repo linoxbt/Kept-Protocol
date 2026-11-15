@@ -141,10 +141,10 @@ Measured on Base on 12 Nov 2026: blocks every 0.2 s, and `finalized` trails `lat
 
 ```bash
 curl -s https://<kept>/api/v1/receipts/kr_… > receipt.json
-npm run verify-receipt -- receipt.json --rpc https://base-rpc.publicnode.com
+npm run verify-receipt -- receipt.json --signer 0x98Eb4A5Db492b28AAb5225Cb2FfaEa941EDBC9E2 --rpc https://base-rpc.publicnode.com
 ```
 
-`kept-verify` recomputes the SHA-256 of the canonical JSON, recovers the EIP-191 signer, checks the Merkle inclusion proof once anchored, then re-fetches every Transfer log in the receipt's block range from *your* RPC, reruns the named method version, and confirms the same result. Each receipt page also has a **Verify in this browser** button. The signer address is published at `/.well-known/agent-card.json`.
+`kept-verify` recomputes the SHA-256 of the canonical JSON and recovers the EIP-191 signer, which must equal the signer you pass with `--signer` (or, when verifying by URL without it, the one published in the deployment's `/.well-known/agent-card.json`); the public development key is always rejected. Once a receipt is anchored it checks that the Merkle leaf is this receipt, that the proof reaches the root, and that this root is the one attested in the EAS attestation **read from your RPC on Base**. Then it re-fetches every Transfer log in the receipt's block range from *your* RPC, reruns the named method version, and confirms the same result. Each receipt page also has a **Verify in this browser** button, which compares the recovered signer with the published one.
 
 ---
 

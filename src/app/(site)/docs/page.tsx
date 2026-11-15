@@ -85,7 +85,7 @@ export default function Docs() {
         </ol>
         <pre className="panel p-4 text-xs mono overflow-auto">{`git clone <this repository> && cd kept && npm ci
 curl -s $KEPT/api/v1/receipts/kr_… > receipt.json
-npx tsx scripts/kept-verify.ts receipt.json --rpc https://base-rpc.publicnode.com`}</pre>
+npx tsx scripts/kept-verify.ts receipt.json --signer <published signer> --rpc https://base-rpc.publicnode.com`}</pre>
         <p className="text-sm text-muted mt-3">Every receipt page also has a <span className="text-ink">Verify in this browser</span> button that recomputes the hash and recovers the signer locally.</p>
       </Section>
       <p className="text-sm"><Link className="link" href="/try">Try it on a real project →</Link></p>
