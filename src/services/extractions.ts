@@ -16,6 +16,7 @@ import { ExtractOut } from "@/serv/schemas";
 import { ServError } from "@/serv/client";
 import type { ProjectRow, SnapshotRow } from "./commitments";
 import { assertBudget, budgetedDeps, servClient } from "./serv";
+import { withHeartbeat } from "./jobs";
 import { Conflict, Invalid, NotFound } from "./sources";
 
 export interface ExtractionRow {
@@ -66,7 +67,7 @@ export async function runAndStoreExtraction(
                     ${input.targetCommitmentId ?? null}, ${input.preview ? new Date(Date.now() + 24 * 3600_000) : null})`;
   const work = async (): Promise<ExtractionRow> => {
     try {
-      const result = await runExtraction(text, projectContext(input.project), { serv: client, ...budgetedDeps(id, sql) });
+      const result = await withHeartbeat("extractions", id, sql, () => runExtraction(text, projectContext(input.project), { serv: client, ...budgetedDeps(id, sql) }));
       const [row] = await sql<ExtractionRow[]>`update extractions set status = 'done', result = ${sql.json(result as never)} where id = ${id} returning *`;
       return row;
     } catch (e) {

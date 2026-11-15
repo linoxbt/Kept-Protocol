@@ -35,26 +35,59 @@ export function TryIt() {
   const [res, setRes] = useState<{ id: string; result: ExtractionResult } | null>(null);
   const started = useRef(false);
 
+  /** Polls an extraction until it finishes. Transient gateway errors are retried, not shown. */
+  async function follow(first: { id: string; status: string; result?: ExtractionResult; error?: string | null }) {
+    let j = first;
+    let transient = 0;
+    // The server fails work whose process died within ~3 minutes, so this rarely runs to the end.
+    for (let i = 0; j.status === "running" && i < 300; i++) {
+      await new Promise((ok) => setTimeout(ok, 2000));
+      let p: Response;
+      try {
+        p = await fetch(`/api/v1/extractions/${j.id}`, { cache: "no-store" });
+      } catch {
+        if (++transient > 5) throw new Error("lost the connection while waiting; reload this page to see the result");
+        continue;
+      }
+      if (p.status === 404) throw new Error("this preview no longer exists (previews expire after 24 hours)");
+      if (!p.ok) {
+        if (++transient > 5) throw new Error(`could not load the preview (HTTP ${p.status})`);
+        continue;
+      }
+      transient = 0;
+      j = await p.json();
+    }
+    if (j.status === "failed") setError(j.error ?? "extraction failed");
+    else if (j.status === "running") setError("SERV is taking longer than usual; reload this page in a minute to see the result.");
+    else setRes({ id: j.id, result: j.result! });
+  }
+
   async function run(u = url, t = text, m = mode) {
     setBusy(true);
     setError(null);
     setRes(null);
     try {
       const r = await fetch("/api/v1/tryit", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(m === "url" ? { url: u } : { text: t }) });
-      let j = await r.json();
+      const j = await r.json();
       if (!r.ok) {
         setError(j.detail ?? j.title ?? "failed");
         return;
       }
-      // Extraction runs in the background; poll until it finishes (up to ~4 minutes).
-      for (let i = 0; j.status === "running" && i < 120; i++) {
-        await new Promise((ok) => setTimeout(ok, 2000));
-        const p = await fetch(`/api/v1/extractions/${j.id}`);
-        if (p.ok) j = await p.json();
-      }
-      if (j.status === "failed") setError(j.error ?? "extraction failed");
-      else if (j.status === "running") setError("SERV is taking longer than usual; try again in a minute.");
-      else setRes({ id: j.id, result: j.result });
+      // Reloading or sharing the page reopens this preview instead of starting a new extraction.
+      window.history.replaceState(null, "", `/try?preview=${encodeURIComponent(j.id)}`);
+      await follow(j);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reopen(id: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      await follow({ id, status: "running" });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -63,11 +96,16 @@ export function TryIt() {
   }
 
   useEffect(() => {
-    const u = params.get("url");
-    if (u && !started.current) {
+    // Start after mount (not synchronously in the effect); the ref keeps a remount from starting twice.
+    const t = setTimeout(() => {
+      if (started.current) return;
       started.current = true;
-      void run(u, "", "url");
-    }
+      const preview = params.get("preview");
+      const u = params.get("url");
+      if (preview) void reopen(preview);
+      else if (u) void run(u, "", "url");
+    }, 0);
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -81,8 +119,8 @@ export function TryIt() {
         }}
       >
         <div className="flex gap-4 text-sm">
-          <label className="flex items-center gap-2"><input type="radio" checked={mode === "url"} onChange={() => setMode("url")} /> URL</label>
-          <label className="flex items-center gap-2"><input type="radio" checked={mode === "text"} onChange={() => setMode("text")} /> Paste text</label>
+          <label className="flex items-center gap-2"><input type="radio" name="source-kind" checked={mode === "url"} onChange={() => setMode("url")} /> URL</label>
+          <label className="flex items-center gap-2"><input type="radio" name="source-kind" checked={mode === "text"} onChange={() => setMode("text")} /> Paste text</label>
         </div>
         {mode === "url" ? (
           <input className="input mono" type="url" required placeholder="https://docs.example.xyz/tokenomics" value={url} onChange={(e) => setUrl(e.target.value)} />

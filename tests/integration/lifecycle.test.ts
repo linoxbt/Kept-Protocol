@@ -29,7 +29,7 @@ import type { CommitmentSpec, Evidence } from "@/core/types";
 import { createSession, revokeSessions, validSession, verifyCredential } from "@/lib/auth";
 import { json, route } from "@/lib/http";
 import { decideDispute, listDisputes, openDispute } from "@/services/disputes";
-import { getJob, startJob } from "@/services/jobs";
+import { failStaleJobs, getJob, startJob, withHeartbeat } from "@/services/jobs";
 import { confirmViolation } from "@/services/verify";
 import { bootstrapSecrets, resetBootstrapForTests, sealValue } from "@/lib/secrets";
 
@@ -400,5 +400,21 @@ describe.skipIf(!DB_UP)("Kept lifecycle", () => {
       resetEnvCache();
       await sql`truncate serv_budget_holds`;
     }
+  });
+
+  it("fails orphaned jobs and extractions by heartbeat, never live ones", async () => {
+    await sql`insert into jobs (id, kind, status, heartbeat_at, created_at) values
+      ('kj_orphan', 'verify', 'running', now() - interval '10 minutes', now() - interval '10 minutes'),
+      ('kj_slow', 'grifter', 'running', now() - interval '5 seconds', now() - interval '45 minutes')`;
+    await sql`insert into extractions (id, content_sha256, preview, status, heartbeat_at, preview_text) values
+      ('kx_orphan', 'x', true, 'running', now() - interval '10 minutes', 'text'),
+      ('kx_live', 'x', true, 'running', now(), 'text')`;
+    await failStaleJobs(sql);
+    const st = Object.fromEntries((await sql<{ id: string; status: string }[]>`
+      select id, status from jobs where id in ('kj_orphan', 'kj_slow') union all
+      select id, status from extractions where id in ('kx_orphan', 'kx_live')`).map((r) => [r.id, r.status]));
+    expect(st).toEqual({ kj_orphan: "failed", kj_slow: "running", kx_orphan: "failed", kx_live: "running" });
+    // The heartbeat helper returns the work's result and stops beating afterwards.
+    expect(await withHeartbeat("jobs", "kj_slow", sql, async () => 42)).toBe(42);
   });
 });
