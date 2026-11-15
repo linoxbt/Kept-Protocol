@@ -11,7 +11,7 @@
  */
 import { createHash, createHmac, randomInt, timingSafeEqual } from "node:crypto";
 import { db } from "@/db/client";
-import { hit, peek } from "@/services/ratelimit";
+import { hit, unhit } from "@/services/ratelimit";
 import { env } from "./env";
 import { clientIp, Problem } from "./http";
 import { openValue, verifyPassword } from "./secrets";
@@ -21,7 +21,9 @@ const SESSION_TTL_S = 12 * 3600;
 const DEV_ADMIN_KEY = "dev-admin-key-change-me-0000000000";
 const FAIL_WINDOW_S = 900;
 const FAIL_PER_IP = 10;
-const FAIL_GLOBAL = 60;
+// Deployment-wide ceiling on failed sign-ins. High enough that a handful of addresses cannot lock
+// the owner out; a 12+ character password is far out of reach at this rate. Sessions are unaffected.
+const FAIL_GLOBAL = 300;
 
 function devMode(): boolean {
   return env().NODE_ENV !== "production" || process.env.KEPT_ALLOW_DEV_KEYS === "1";
@@ -65,25 +67,30 @@ async function checkAdminKey(candidate: string): Promise<boolean> {
   const key = env().KEPT_ADMIN_KEY;
   if (key && safeEqual(candidate, key)) return true;
   const hash = await adminPasswordHash();
-  if (hash && verifyPassword(candidate, hash)) return true;
+  if (hash && (await verifyPassword(candidate, hash))) return true;
   return devMode() && !key && !hash && safeEqual(candidate, DEV_ADMIN_KEY);
 }
 
 /**
- * Checks a credential with brute-force protection. Throws 429 when the caller or the deployment
- * has used up its failure budget; records a failure otherwise.
+ * Checks a credential with brute-force protection. Each attempt takes a unit from the per-IP and
+ * deployment-wide counters BEFORE the password is checked (an atomic increment, so a burst of
+ * parallel guesses cannot all slip past a read-then-check), and a successful attempt gives it back.
+ * Throws 429 once the caller or the deployment has used up its budget.
  */
 export async function verifyCredential(req: Request, candidate: string): Promise<boolean> {
   const ip = clientIp(req);
-  const [mine, all] = await Promise.all([peek(`authfail:${ip}`, FAIL_PER_IP, FAIL_WINDOW_S), peek("authfail:*", FAIL_GLOBAL, FAIL_WINDOW_S)]);
+  const mineKey = `authfail:${ip}`;
+  const [mine, all] = await Promise.all([hit(mineKey, FAIL_PER_IP, FAIL_WINDOW_S), hit("authfail:*", FAIL_GLOBAL, FAIL_WINDOW_S)]);
   if (!mine.allowed || !all.allowed) {
     const reset = (mine.allowed ? all : mine).resetAt;
     throw new Problem(429, "Too many requests", "too many failed sign-in attempts; try again later", {
       "retry-after": String(Math.max(1, Math.ceil((reset.getTime() - Date.now()) / 1000))),
     });
   }
-  if (await checkAdminKey(candidate)) return true;
-  await Promise.all([hit(`authfail:${ip}`, FAIL_PER_IP, FAIL_WINDOW_S), hit("authfail:*", FAIL_GLOBAL, FAIL_WINDOW_S)]);
+  if (await checkAdminKey(candidate)) {
+    await Promise.all([unhit(mineKey, FAIL_WINDOW_S), unhit("authfail:*", FAIL_WINDOW_S)]);
+    return true;
+  }
   // Uniform delay so a failure costs the guesser time, not the server CPU.
   await new Promise((r) => setTimeout(r, 200 + randomInt(200)));
   return false;

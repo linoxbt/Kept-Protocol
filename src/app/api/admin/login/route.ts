@@ -1,12 +1,11 @@
 import { createSession, sessionCookieHeader, verifyCredential } from "@/lib/auth";
-import { route, seeOther } from "@/lib/http";
+import { readForm, route, safeRedirectPath, seeOther } from "@/lib/http";
 
 /** Form login. Failed attempts are limited per IP and globally (see verifyCredential). */
 export const POST = route(async (req: Request) => {
-  const form = await req.formData().catch(() => null);
+  const form = await readForm(req);
   const key = String(form?.get("key") ?? "");
-  const next = String(form?.get("next") ?? "/admin");
-  const safeNext = next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/\\") ? next : "/admin";
+  const safeNext = safeRedirectPath(String(form?.get("next") ?? "/admin"), "/admin");
   let ok: boolean;
   try {
     ok = await verifyCredential(req, key);

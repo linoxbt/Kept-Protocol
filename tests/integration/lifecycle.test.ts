@@ -417,4 +417,12 @@ describe.skipIf(!DB_UP)("Kept lifecycle", () => {
     // The heartbeat helper returns the work's result and stops beating afterwards.
     expect(await withHeartbeat("jobs", "kj_slow", sql, async () => 42)).toBe(42);
   });
+
+  it("counts sign-in attempts atomically: a parallel burst gets at most the per-IP budget of checks", async () => {
+    const r = () => new Request("https://kept.test/api", { headers: { "x-real-ip": "198.51.100.23" } });
+    const results = await Promise.allSettled(Array.from({ length: 30 }, (_, i) => verifyCredential(r(), `burst-${i}`)));
+    const checked = results.filter((x) => x.status === "fulfilled");
+    expect(checked.length).toBe(10);
+    expect(results.filter((x) => x.status === "rejected").every((x) => /too many failed/.test(String((x as PromiseRejectedResult).reason)))).toBe(true);
+  }, 30_000);
 });

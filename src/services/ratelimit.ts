@@ -13,6 +13,12 @@ export async function hit(key: string, limit: number, windowSeconds: number, sql
   return { allowed: row.count <= limit, remaining: Math.max(0, limit - row.count), resetAt: new Date(windowStart.getTime() + windowSeconds * 1000) };
 }
 
+/** Gives back one unit of a counter taken with hit() (e.g. a sign-in attempt that succeeded). */
+export async function unhit(key: string, windowSeconds: number, sql: Sql = db()): Promise<void> {
+  const windowStart = new Date(Math.floor(Date.now() / (windowSeconds * 1000)) * windowSeconds * 1000);
+  await sql`update rate_limits set count = greatest(count - 1, 0) where key = ${key} and window_start = ${windowStart}`;
+}
+
 /** Reads a counter without incrementing it (used before an expensive check such as scrypt). */
 export async function peek(key: string, limit: number, windowSeconds: number, sql: Sql = db()): Promise<{ allowed: boolean; resetAt: Date }> {
   const windowStart = new Date(Math.floor(Date.now() / (windowSeconds * 1000)) * windowSeconds * 1000);
