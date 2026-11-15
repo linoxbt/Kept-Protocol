@@ -11,12 +11,14 @@ export const DEADLINE_WARNING_SECONDS = 7 * DAY;
 export const FUNDING_GRACE_SECONDS = 7 * DAY;
 
 export const METHOD_VERSIONS: Record<MethodId, number> = {
-  erc20_outflow_v1: 1,
+  erc20_outflow_v1: 2,
   vesting_schedule_v1: 2,
   burn_v1: 1,
 };
 
 const lc = (a: string) => a.toLowerCase();
+/** Tokens sent here are destroyed, not moved: burning locked tokens is not an outflow (v2). */
+const BURN_SINKS = new Set(["0x0000000000000000000000000000000000000000", "0x000000000000000000000000000000000000dead"]);
 const ts = (iso: string) => Math.floor(Date.parse(iso) / 1000);
 
 export function orderTransfers(list: Transfer[]): Transfer[] {
@@ -64,7 +66,7 @@ export function erc20OutflowV1(spec: CommitmentSpec, ev: Evidence): MethodResult
   const internal = new Set([...subjects, ...spec.internal_addresses.map(lc)]);
   const token = lc(spec.token.address);
   const isOutflow = (t: Transfer) =>
-    lc(t.token) === token && subjects.has(lc(t.from)) && !internal.has(lc(t.to)) && t.blockTime >= start && t.blockTime < end;
+    lc(t.token) === token && subjects.has(lc(t.from)) && !internal.has(lc(t.to)) && !BURN_SINKS.has(lc(t.to)) && t.blockTime >= start && t.blockTime < end;
 
   const counted = orderTransfers(ev.transfers.filter(isOutflow));
   let running = 0n;
@@ -89,6 +91,10 @@ export function erc20OutflowV1(spec: CommitmentSpec, ev: Evidence): MethodResult
     (t) => lc(t.token) === token && subjects.has(lc(t.from)) && internal.has(lc(t.to)) && t.blockTime >= start && t.blockTime < end,
   ).length;
   if (internalMoves > 0) notes.push(`${internalMoves} transfer(s) between the entity's own addresses were not counted`);
+  const burned = ev.transfers.filter(
+    (t) => lc(t.token) === token && subjects.has(lc(t.from)) && BURN_SINKS.has(lc(t.to)) && t.blockTime >= start && t.blockTime < end,
+  );
+  if (burned.length) notes.push(`${formatUnits(sum(burned.map((t) => t.amount)), spec.token.decimals)} burned from the locked address in ${burned.length} transfer(s); burning destroys tokens and is not counted as leaving the lock`);
 
   return {
     ...base(spec),

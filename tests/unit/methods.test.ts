@@ -243,3 +243,16 @@ describe("vesting tolerance (audit B2, method v2)", () => {
     expect(deriveStatus(spec, r, "confirmed").status).toBe("breached");
   });
 });
+
+describe("burning locked tokens (audit B7, erc20_outflow_v1 v2)", () => {
+  it("is not counted as tokens leaving the lock, and is noted", () => {
+    const spec = lockSpec();
+    const r = erc20OutflowV1(spec, evidence([
+      transfer({ from: TEAM, to: "0x0000000000000000000000000000000000000000", amount: 100n * E18, at: "2026-05-01" }),
+      transfer({ from: TEAM, to: DEAD, amount: 5n * E18, at: "2026-05-02" }),
+    ], "2026-06-01"));
+    expect(r.outcome).toBe("in_progress");
+    expect(r.notes.join(" ")).toMatch(/105 burned from the locked address in 2 transfer/);
+    expect(deriveStatus(spec, r, "confirmed").status).toBe("verified");
+  });
+});

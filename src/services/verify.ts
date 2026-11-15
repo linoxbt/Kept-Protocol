@@ -24,6 +24,7 @@ export const METHOD_LIMITATIONS: Record<string, string[]> = {
     "Counts ERC-20 Transfer logs only; tokens held by addresses not in the subject list are not covered.",
     "Bridged, wrapped or rebasing representations of the token are not covered.",
     "Moves between addresses the reviewer confirmed as the same entity are not counted.",
+    "Tokens burned from a locked address (sent to the zero or 0x…dEaD address) are destroyed, not moved, and are not counted as leaving the lock.",
   ],
   vesting_schedule_v1: [
     "Releases are measured as Transfer logs out of the vesting contract.",
