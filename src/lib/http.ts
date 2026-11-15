@@ -216,8 +216,11 @@ export function route<C>(handler: Handler<C>): Handler<C> {
       if (key) {
         const sql = db();
         if (Math.random() < 0.02) await sql`delete from idempotency_keys where created_at < now() - interval '24 hours'`;
+        // A claim left by a process that died mid-request (deploy, crash) is taken over after 5 minutes.
         const [mine] = await sql`insert into idempotency_keys (key, route, status, body) values (${key}, ${url.pathname}, ${IDEMPOTENCY_IN_FLIGHT}, '')
-                                 on conflict do nothing returning key`;
+                                 on conflict (key, route) do update set created_at = now()
+                                   where idempotency_keys.status = ${IDEMPOTENCY_IN_FLIGHT} and idempotency_keys.created_at < now() - interval '5 minutes'
+                                 returning key`;
         if (!mine) {
           const [prev] = await sql<{ status: number; body: string }[]>`select status, body from idempotency_keys where key = ${key} and route = ${url.pathname}`;
           if (prev && prev.status !== IDEMPOTENCY_IN_FLIGHT) return new Response(prev.body, { status: prev.status, headers: { "content-type": "application/json", "idempotent-replayed": "true" } });
@@ -229,11 +232,16 @@ export function route<C>(handler: Handler<C>): Handler<C> {
       if (claimed) {
         const key = claimed;
         claimed = null;
-        if (res.status >= 200 && res.status < 300) {
-          const body = await res.clone().text();
-          await db()`update idempotency_keys set status = ${res.status}, body = ${body} where key = ${key} and route = ${url.pathname}`;
-        } else {
-          await db()`delete from idempotency_keys where key = ${key} and route = ${url.pathname}`;
+        // The request already succeeded or failed; a failure to record that must not change the response.
+        try {
+          if (res.status >= 200 && res.status < 300) {
+            const body = await res.clone().text();
+            await db()`update idempotency_keys set status = ${res.status}, body = ${body} where key = ${key} and route = ${url.pathname}`;
+          } else {
+            await db()`delete from idempotency_keys where key = ${key} and route = ${url.pathname}`;
+          }
+        } catch (e) {
+          console.error("[kept] could not record idempotency result", e);
         }
       }
       return res;

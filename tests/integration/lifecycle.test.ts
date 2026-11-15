@@ -467,4 +467,28 @@ describe.skipIf(!DB_UP)("Kept lifecycle", () => {
     expect(n).toBe(1);
     expect(await ensureShowcase(sql)).toBeUndefined();
   }, 60_000);
+
+  it("takes over an idempotency claim abandoned by a crashed request, and never refuses a valid admin key in a burst", async () => {
+    const h = route(async () => json({ ok: true }));
+    const post = () => new Request("https://kept.test/api/v1/idem-crash", { method: "POST", headers: { "idempotency-key": "k-crash", authorization: "Bearer admin-two" } });
+    // Simulate a process that died after claiming the key 10 minutes ago.
+    const scope = (await import("node:crypto")).createHash("sha256").update("Bearer admin-two\n").digest("hex").slice(0, 32);
+    await sql`insert into idempotency_keys (key, route, status, body, created_at) values (${`${scope}:k-crash`}, '/api/v1/idem-crash', 0, '', now() - interval '10 minutes')`;
+    const res = await h(post(), {});
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+
+    const saved = process.env.KEPT_ADMIN_KEY;
+    try {
+      process.env.KEPT_ADMIN_KEY = "a-valid-admin-key-for-tests-000000";
+      resetEnvCache();
+      const r = () => new Request("https://kept.test/api", { headers: { "x-real-ip": "198.51.100.99" } });
+      const results = await Promise.allSettled(Array.from({ length: 20 }, () => verifyCredential(r(), "a-valid-admin-key-for-tests-000000")));
+      expect(results.every((x) => x.status === "fulfilled" && x.value === true)).toBe(true);
+    } finally {
+      if (saved === undefined) delete process.env.KEPT_ADMIN_KEY;
+      else process.env.KEPT_ADMIN_KEY = saved;
+      resetEnvCache();
+    }
+  }, 30_000);
 });

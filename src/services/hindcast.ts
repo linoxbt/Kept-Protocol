@@ -27,7 +27,10 @@ async function coveredUntil(specs: CommitmentSpec[], from: number, sql: Sql): Pr
   let until = Number.POSITIVE_INFINITY;
   for (const spec of specs) {
     const chain = getChain(spec.chain_id).primary as ReturnType<typeof getChain>["primary"] & { blockTime?: (n: bigint) => Promise<number> };
-    const needFrom = await chain.blockAtOrBefore(from);
+    // Each version's addresses are only scanned over that version's own window.
+    const specStart = Math.floor(Date.parse(spec.window.start) / 1000);
+    const specEnd = Math.floor(Date.parse(spec.window.end) / 1000);
+    const needFrom = await chain.blockAtOrBefore(Math.max(from, specStart));
     for (const addr of watchedAddresses(spec)) {
       const [c] = await sql<{ scanned_from: string; scanned_to: string }[]>`
         select scanned_from::text, scanned_to::text from scan_cursors
@@ -36,7 +39,8 @@ async function coveredUntil(specs: CommitmentSpec[], from: number, sql: Sql): Pr
         throw new Invalid(`chain evidence for ${addr} does not reach back to the start of the replay yet (${c ? `scanned from block ${c.scanned_from}` : "not scanned yet"}); run it once the backfill completes`);
       }
       const t = chain.blockTime ? await chain.blockTime(BigInt(c.scanned_to)) : (await chain.finalizedBlock()).timestamp;
-      until = Math.min(until, t);
+      // An address scanned to the end of its own version's window does not limit the replay.
+      if (t < specEnd) until = Math.min(until, t);
     }
   }
   return until;

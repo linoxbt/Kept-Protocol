@@ -256,11 +256,17 @@ export async function confirmDraft(req: ConfirmRequest, sql: Sql = db()): Promis
   if (already) throw new Conflict(`this draft is already confirmed as ${already.commitment_id}`);
   const commitmentId = newId("kc");
   const versionId = newId("kv");
-  await sql.begin(async (tx) => {
-    await tx`insert into commitments (id, project_id, current_version_id, status, status_reason) values (${commitmentId}, ${project.id}, ${versionId}, 'pending', 'confirmed; first check pending')`;
-    await tx`insert into commitment_versions (id, commitment_id, version, snapshot_id, extraction_id, draft_index, spec, change_kind, confirmed_by, published_at)
-             values (${versionId}, ${commitmentId}, 1, ${snapshot.id}, ${extraction.id}, ${req.draftIndex}, ${tx.json(spec as never)}, 'initial', ${req.reviewer}, ${snapshot.captured_at})`;
-    await tx`insert into admin_log (action, target, detail) values ('confirm_draft', ${commitmentId}, ${tx.json({ extraction: extraction.id, draft: req.draftIndex, reviewer: req.reviewer })})`;
-  });
+  try {
+    await sql.begin(async (tx) => {
+      await tx`insert into commitments (id, project_id, current_version_id, status, status_reason) values (${commitmentId}, ${project.id}, ${versionId}, 'pending', 'confirmed; first check pending')`;
+      await tx`insert into commitment_versions (id, commitment_id, version, snapshot_id, extraction_id, draft_index, spec, change_kind, confirmed_by, published_at)
+               values (${versionId}, ${commitmentId}, 1, ${snapshot.id}, ${extraction.id}, ${req.draftIndex}, ${tx.json(spec as never)}, 'initial', ${req.reviewer}, ${snapshot.captured_at})`;
+      await tx`insert into admin_log (action, target, detail) values ('confirm_draft', ${commitmentId}, ${tx.json({ extraction: extraction.id, draft: req.draftIndex, reviewer: req.reviewer })})`;
+    });
+  } catch (e) {
+    // Two concurrent confirms of one draft: the unique index lets one through.
+    if ((e as { code?: string }).code === "23505") throw new Conflict("this draft was just confirmed by another request");
+    throw e;
+  }
   return { commitmentId, versionId };
 }

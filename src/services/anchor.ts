@@ -122,6 +122,12 @@ async function finalizeAttempt(sql: Sql, a: AttemptRow, logs: readonly { data: H
   return { anchorId: a.id, root: a.merkle_root, count: a.receipt_ids.length, tx: a.tx_hash as Hex, uid };
 }
 
+/** True only for viem's definite "no such transaction" answers, never for an RPC outage. */
+function isNotFound(e: unknown): boolean {
+  const name = (e as { name?: string })?.name ?? "";
+  return name === "TransactionReceiptNotFoundError" || name === "TransactionNotFoundError";
+}
+
 /** An attempt whose transaction has not appeared after this long was dropped; its receipts are offered again. */
 const ATTEMPT_DROPPED_AFTER_MS = 30 * 60_000;
 
@@ -133,7 +139,12 @@ async function reconcileAttempts(sql: Sql, pub: { getTransactionReceipt: (a: { h
   const done: AnchorResult[] = [];
   const attempts = await sql<AttemptRow[]>`select * from anchor_attempts where chain_id = ${chainId} order by created_at`;
   for (const a of attempts) {
-    const receipt = await pub.getTransactionReceipt({ hash: a.tx_hash as Hex }).catch(() => null);
+    let receipt: Awaited<ReturnType<typeof pub.getTransactionReceipt>> | null = null;
+    try {
+      receipt = await pub.getTransactionReceipt({ hash: a.tx_hash as Hex });
+    } catch (e) {
+      if (!isNotFound(e)) continue; // RPC trouble: decide on a later run, never drop on an outage
+    }
     if (receipt?.status === "success") done.push(await finalizeAttempt(sql, a, receipt.logs));
     else if (receipt || Date.now() - a.created_at.getTime() > ATTEMPT_DROPPED_AFTER_MS) await sql`delete from anchor_attempts where id = ${a.id}`;
   }
@@ -152,6 +163,8 @@ export async function anchorPending(sql: Sql = db(), chainId = anchorChainId()):
   const r = await withSessionLock(sql, ANCHOR_LOCK, async () => {
     const { chain, rpc } = chainFor(chainId);
     const pub = createPublicClient({ chain, transport: http(rpc) });
+    // Schema registration shares the lock (and so the operator's nonce) with attestations.
+    if (!env().EAS_SCHEMA_UID) await registerAnchorSchema(chainId);
     const reconciled = await reconcileAttempts(sql, pub, chainId);
     const pending = await pendingRoot(sql);
     if (!pending.root) return reconciled.at(-1) ?? null;
@@ -173,8 +186,10 @@ export async function anchorPending(sql: Sql = db(), chainId = anchorChainId()):
       await wallet.sendRawTransaction({ serializedTransaction: serialized });
     } catch (e) {
       // Not broadcast (or rejected outright): release the receipts now rather than in 30 minutes.
-      const seen = await pub.getTransaction({ hash: txHash }).catch(() => null);
-      if (!seen) await sql`delete from anchor_attempts where id = ${anchorId}`;
+      // Release now only if the node definitely does not know the transaction; otherwise the next
+      // run reconciles it by hash (it may still land).
+      const known = await pub.getTransaction({ hash: txHash }).then(() => true, (err) => !isNotFound(err));
+      if (!known) await sql`delete from anchor_attempts where id = ${anchorId}`;
       throw e;
     }
     const receipt = await pub.waitForTransactionReceipt({ hash: txHash });
@@ -259,7 +274,6 @@ export async function autoAnchor(sql: Sql = db()): Promise<{ anchored: number; s
     const interval = Number(process.env.ANCHOR_INTERVAL_S ?? 6 * 3600) * 1000;
     const due = !st.last_anchor || Date.now() - Date.parse(st.last_anchor.anchored_at) >= interval || st.pending_receipts >= 500;
     if (!due) return { anchored: 0, skipped: "not due" };
-    if (!env().EAS_SCHEMA_UID) await registerAnchorSchema(st.chain_id);
     const r = await anchorPending(sql, st.chain_id);
     statusCache = null;
     return r ? { anchored: r.count, tx: r.tx } : { anchored: 0, skipped: "nothing pending" };

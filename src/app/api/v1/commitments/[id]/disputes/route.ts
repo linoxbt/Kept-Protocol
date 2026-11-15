@@ -5,10 +5,10 @@ import { requesterHash } from "@/services/ratelimit";
 
 export const GET = route(async (_req: Request, ctx: { params: Promise<{ id: string }> }) => {
   const { id } = await ctx.params;
-  // Unreviewed disputes are public as a fact (id, status, date), not as text: their reason and link
-  // are published once a reviewer has read them, so the record cannot be used to post spam.
+  // Unreviewed and rejected disputes are public as a fact (id, status, date), not as text: a reason
+  // and link are published only once a reviewer accepts them, so the record cannot carry spam.
   const rows = await listDisputes(id);
-  return json({ data: rows.map((d) => (d.status === "open" ? { ...d, reason: null, evidence_url: null } : d)) });
+  return json({ data: rows.map((d) => (d.status === "open" || d.status === "rejected" ? { ...d, reason: null, evidence_url: null } : d)) });
 });
 
 const Body = z.object({

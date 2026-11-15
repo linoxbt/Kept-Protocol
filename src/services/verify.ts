@@ -122,8 +122,9 @@ export async function confirmViolation(
       // the limit), not just the one that crossed it: the earlier ones built the total.
       const proof = breachProof(spec, result);
       if (!proof) return { confirmation: "unavailable", detail: "no outflow from an address with confirmed attribution exceeds the limit on its own" };
-      if (proof.transfers.length > MAX_PROOF_TRANSFERS)
-        return { confirmation: "unavailable", detail: `the violation rests on ${proof.transfers.length} transfers; more than ${MAX_PROOF_TRANSFERS} cannot be re-confirmed one by one` };
+      // Too many to confirm one by one (many small sells, stream withdrawals): recount every transfer
+      // from the watched addresses on the second provider instead (resumable across checks).
+      if (proof.transfers.length > MAX_PROOF_TRANSFERS) return await recountShortfall(spec, result, collected, confirm, sql, budget);
       const ok = await Promise.all(proof.transfers.map((t) => confirm.confirmTransfer(t)));
       return ok.every(Boolean)
         ? { confirmation: "confirmed", detail: `${proof.transfers.length} transfer(s) proving the violation independently confirmed at finalized blocks` }

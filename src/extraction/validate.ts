@@ -200,7 +200,7 @@ export function checkGrounding(
   const claimed = new Set(draft.derived.map((d) => d.field));
   const derived = opts.derivedBy === "reviewer" ? claimed : recomputableDerived(draft, nums, dates);
   if (draft.derived.length) flags.add("DERIVED_VALUE");
-  for (const f of claimed) if (!derived.has(f)) problems.push(`${f} is marked as derived, but code cannot recompute it from the excerpt`);
+
 
   const checkNum = (field: string, v: string | number | null) => {
     if (v === null || v === undefined) return;
@@ -265,6 +265,10 @@ export function checkGrounding(
   if ((draft.category === "token_lock" || draft.category === "vesting") && !draft.vesting_contract && draft.comparator === "gte") {
     flags.add("COMPARATOR_MISMATCH");
     problems.push("a lock limits outflows, so it needs an upper bound (lte)");
+  }
+  // Explain a refused derivation only where it matters: the value is not in the text either.
+  for (const f of claimed) {
+    if (!derived.has(f) && problems.some((p) => p.startsWith(`${f} = `))) problems.push(`${f} is marked as derived, but code cannot recompute it from the excerpt`);
   }
   return { flags: [...flags], problems };
 }

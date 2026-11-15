@@ -237,8 +237,8 @@ async function Commitment({ params }: { params: Promise<{ id: string }> }) {
                   </span>
                   <span className="mono text-xs text-muted">opened {fmtDate(x.opened_at, true)}</span>
                 </div>
-                {x.status === "open" && !admin ? (
-                  <p className="mt-1 text-muted">Awaiting review. The reason and evidence are published once a reviewer has read them.</p>
+                {(x.status === "open" || x.status === "rejected") && !admin ? (
+                  <p className="mt-1 text-muted">{x.status === "open" ? "Awaiting review. The reason and evidence are published once a reviewer accepts the dispute." : "Rejected after review."}</p>
                 ) : (
                   <>
                     <p className="mt-1 whitespace-pre-wrap">{x.reason}</p>

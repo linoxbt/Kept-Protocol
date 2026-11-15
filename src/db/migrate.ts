@@ -11,9 +11,16 @@ import postgres from "postgres";
 const MIGRATE_LOCK = 0x4b4550544d; // "KEPTM"
 
 export async function migrate(url: string, log: (m: string) => void = console.log): Promise<string[]> {
-  const sql = postgres(url, { max: 1, onnotice: () => {} });
+  const sql = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
   try {
-    await sql`select pg_advisory_lock(${MIGRATE_LOCK})`;
+    // Wait for another process's migration, but not forever (a stuck holder must not hang boot).
+    const deadline = Date.now() + 120_000;
+    for (;;) {
+      const [l] = await sql<{ ok: boolean }[]>`select pg_try_advisory_lock(${MIGRATE_LOCK}) as ok`;
+      if (l.ok) break;
+      if (Date.now() > deadline) throw new Error("another process has held the migration lock for 2 minutes; refusing to start");
+      await new Promise((r) => setTimeout(r, 1000));
+    }
     await sql`create table if not exists schema_migrations (name text primary key, applied_at timestamptz not null default now())`;
     const dir = join(process.cwd(), "src/db/migrations");
     const files = readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();

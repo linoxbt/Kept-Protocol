@@ -105,7 +105,8 @@ async function main() {
     pass &&= leafIsThisReceipt && inc;
     // The root must be the one attested on Base, read from the user's RPC.
     try {
-      const pub = createPublicClient({ transport: http(arg("--anchor-rpc") ?? rpc) });
+      const anchorRpc = arg("--anchor-rpc") ?? (a.anchor.chain_id === 84532 ? "https://base-sepolia-rpc.publicnode.com" : a.anchor.chain_id === 8453 ? "https://base-rpc.publicnode.com" : rpc);
+      const pub = createPublicClient({ transport: http(anchorRpc) });
       const txr = await pub.getTransactionReceipt({ hash: a.anchor.tx_hash as Hex });
       let uid: Hex | null = null;
       for (const log of txr.logs) {
@@ -121,7 +122,7 @@ async function main() {
       const att = await pub.readContract({ address: EAS_ADDRESS, abi: easAbi, functionName: "getAttestation", args: [uid] });
       const [root, , anchorId] = decodeAbiParameters(parseAbiParameters("bytes32, uint32, string"), att.data);
       const onchain = root.toLowerCase() === `0x${a.anchor.merkle_root}`.toLowerCase() && anchorId === a.anchor.id && att.revocationTime === 0n;
-      console.log(`${ok(onchain)} EAS attestation ${uid} on chain ${a.anchor.chain_id} (read from ${arg("--anchor-rpc") ?? rpc}) attests root ${root.slice(2)} for ${anchorId}, attester ${att.attester}`);
+      console.log(`${ok(onchain)} EAS attestation ${uid} on chain ${a.anchor.chain_id} (read from ${anchorRpc}) attests root ${root.slice(2)} for ${anchorId}, attester ${att.attester}`);
       pass &&= onchain;
     } catch (e) {
       console.log(`✗ could not confirm the anchor on chain: ${e instanceof Error ? e.message.split("\n")[0] : e}`);
@@ -158,7 +159,8 @@ async function main() {
   });
   // An outflow limit only gets more violated with more evidence: a breach decided during backfill
   // is confirmed by a rerun that finds at least the receipt's outflow.
-  const atLeast = r.result.outcome === "violated" && r.result.comparator === "lte" && result.outcome === "violated" && BigInt(result.computed_value) >= BigInt(r.result.computed_value);
+  const duringBackfill = (r.limitations ?? []).some((l) => l.startsWith("Breach found during backfill"));
+  const atLeast = duringBackfill && r.result.outcome === "violated" && r.result.comparator === "lte" && result.outcome === "violated" && BigInt(result.computed_value) >= BigInt(r.result.computed_value);
   const same = (result.outcome === r.result.outcome && result.computed_value === r.result.computed_value) || atLeast;
   console.log(`${ok(same)} rerun ${spec.method_id}: outcome ${result.outcome}, computed ${result.computed_value} (receipt: ${r.result.outcome}, ${r.result.computed_value}${atLeast && result.computed_value !== r.result.computed_value ? "; at least the receipt's outflow" : ""})`);
   pass &&= same;

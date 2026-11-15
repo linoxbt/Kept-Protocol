@@ -82,6 +82,13 @@ export async function verifyCredential(req: Request, candidate: string): Promise
   const mineKey = `authfail:${ip}`;
   const [mine, all] = await Promise.all([hit(mineKey, FAIL_PER_IP, FAIL_WINDOW_S), hit("authfail:*", FAIL_GLOBAL, FAIL_WINDOW_S)]);
   if (!mine.allowed || !all.allowed) {
+    // A burst of parallel requests with the correct API key holds units only transiently; the key is
+    // checked in constant time without scrypt, so honour it rather than refusing a valid caller.
+    const key = env().KEPT_ADMIN_KEY;
+    if (key && candidate && safeEqual(candidate, key)) {
+      await Promise.all([unhit(mineKey, FAIL_WINDOW_S), unhit("authfail:*", FAIL_WINDOW_S)]);
+      return true;
+    }
     const reset = (mine.allowed ? all : mine).resetAt;
     throw new Problem(429, "Too many requests", "too many failed sign-in attempts; try again later", {
       "retry-after": String(Math.max(1, Math.ceil((reset.getTime() - Date.now()) / 1000))),

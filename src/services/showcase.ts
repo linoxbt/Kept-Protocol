@@ -30,8 +30,10 @@ export async function ensureShowcase(sql: Sql = db()): Promise<{ hindcast?: stri
       out.grifter = id;
     }
     const demo = await demoStatus(sql);
-    let hindcastSettled = true;
+    // Settled only once the replay exists, or when no demo will ever run in this deployment.
+    let hindcastSettled = process.env.KEPT_DEMO_AUTO === "0";
     if (demo?.commitment_id) {
+      hindcastSettled = true;
       if (demo.stage !== "done") hindcastSettled = false;
       else {
         const [h] = await sql<{ n: number }[]>`select count(*)::int as n from hindcast_runs where commitment_id = ${demo.commitment_id}`;
