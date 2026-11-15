@@ -72,7 +72,7 @@ method.
 - **Disputes:** anyone can dispute a record; a reviewer decides, and every decision is public.
 - **Reviewer console:** review queue, manual drafts, webhooks, Grifter runs.
 - **Infrastructure:** security headers, rate limits on real client IPs, secrets encrypted at rest,
-  background jobs, append-only database tables. 92 automated tests and CI on every push.
+  background jobs, append-only database tables. 97 automated tests and CI on every push.
 
 **Revenue potential.** One paid flow is live today; three more are priced for the first pilots:
 
