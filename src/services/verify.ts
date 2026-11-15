@@ -141,6 +141,8 @@ export interface Evaluation {
   decision: StatusDecision;
   collected: CollectedEvidence;
   confirmation: Confirmation;
+  /** Set when a breach was decided during backfill: the result covers blocks up to this transfer only. */
+  range?: { toBlock: bigint; toTime: number };
 }
 
 /** Evidence + method + confirmation + status. No writes except the log cache. */
@@ -148,11 +150,17 @@ export async function evaluate(spec: CommitmentSpec, sql: Sql = db(), opts: { bu
   const chain = getChain(spec.chain_id);
   const collected = await collectEvidence(spec, { sql, adapter: chain.primary, budgetBlocks: opts.budgetBlocks });
   let result = runMethod(spec, collected.evidence);
+  let range: Evaluation["range"];
   if (!collected.complete) {
     // Outflows and releases only accumulate, so a violation in the scanned part is real.
     const partial = runMethod(spec, { ...collected.evidence, transfers: collected.partialTransfers });
     if (partial.outcome === "violated" && spec.method_id !== "burn_v1") {
-      result = partial;
+      // Decide (and later prove) the breach over exactly the blocks up to the transfer that broke the
+      // limit, so the receipt's block range is the one the result was computed from.
+      const crossing = partial.violating[0];
+      const upTo = collected.partialTransfers.filter((t) => t.blockNumber <= crossing.blockNumber);
+      range = { toBlock: crossing.blockNumber, toTime: crossing.blockTime };
+      result = runMethod(spec, { ...collected.evidence, transfers: upTo, finalizedBlock: crossing.blockNumber, finalizedTime: crossing.blockTime, asOf: crossing.blockTime });
     } else {
       const pct = scanProgress(collected);
       return {
@@ -169,7 +177,7 @@ export async function evaluate(spec: CommitmentSpec, sql: Sql = db(), opts: { bu
       ? { confirmation: "unavailable", detail: "previews are not independently confirmed" }
       : await confirmViolation(spec, result, collected, chain.confirm, sql, opts.budgetBlocks ?? MAX_CONFIRM_BLOCKS_PER_CHECK);
   const decision = deriveStatus(spec, result, confirmation.confirmation);
-  return { result, decision, collected, confirmation };
+  return { result, decision, collected, confirmation, range };
 }
 
 function scanProgress(c: CollectedEvidence): number {
@@ -237,6 +245,7 @@ export async function runCheck(commitmentId: string, opts: { sql?: Sql; trigger?
   const signer = getSigner();
   const limitations = [...(METHOD_LIMITATIONS[spec.method_id] ?? []), ...result.notes];
   if (!collected.complete) limitations.push(`Evidence backfill incomplete: scanned to block ${collected.scannedTo}.`);
+  if (evaluation.range) limitations.push(`Breach found during backfill: the result covers blocks up to ${evaluation.range.toBlock}, the transfer that broke the limit. Addresses not yet scanned that far can only add to the outflow.`);
   if (isDevSigner(signer.address)) limitations.push("Signed with the public development key: this receipt proves nothing until re-issued with Kept's production key.");
 
   const evidenceList = [...result.violating, ...result.counted.filter((t) => !result.violating.includes(t))].slice(0, 500);
@@ -254,9 +263,9 @@ export async function runCheck(commitmentId: string, opts: { sql?: Sql; trigger?
       token: spec.token.address,
       subjects: spec.subjects.map((s) => s.address),
       from_block: collected.windowFromBlock.toString(),
-      to_block: collected.evidence.finalizedBlock.toString(),
+      to_block: (evaluation.range?.toBlock ?? collected.evidence.finalizedBlock).toString(),
       to_block_finalized: true,
-      to_block_time: collected.evidence.finalizedTime,
+      to_block_time: evaluation.range?.toTime ?? collected.evidence.finalizedTime,
     },
     evidence: evidenceList.map(ev),
     result: {

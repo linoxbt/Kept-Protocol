@@ -156,8 +156,11 @@ async function main() {
     vesting,
     asOf: r.chain.to_block_time,
   });
-  const same = result.outcome === r.result.outcome && result.computed_value === r.result.computed_value;
-  console.log(`${ok(same)} rerun ${spec.method_id}: outcome ${result.outcome}, computed ${result.computed_value} (receipt: ${r.result.outcome}, ${r.result.computed_value})`);
+  // An outflow limit only gets more violated with more evidence: a breach decided during backfill
+  // is confirmed by a rerun that finds at least the receipt's outflow.
+  const atLeast = r.result.outcome === "violated" && r.result.comparator === "lte" && result.outcome === "violated" && BigInt(result.computed_value) >= BigInt(r.result.computed_value);
+  const same = (result.outcome === r.result.outcome && result.computed_value === r.result.computed_value) || atLeast;
+  console.log(`${ok(same)} rerun ${spec.method_id}: outcome ${result.outcome}, computed ${result.computed_value} (receipt: ${r.result.outcome}, ${r.result.computed_value}${atLeast && result.computed_value !== r.result.computed_value ? "; at least the receipt's outflow" : ""})`);
   pass &&= same;
   console.log(pass ? "\nreceipt verified" : "\nreceipt did NOT verify");
   process.exit(pass ? 0 : 1);
