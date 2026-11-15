@@ -63,6 +63,12 @@ method.
   v1 Breached, v2 Verified. One honest note: the append-only history also shows a one-minute
   Breached → Verified flip at 16:54 UTC on 13 November, recorded before the rule that a later
   revision cannot undo a breach shipped; the rule restored the breach at 19:59 and holds it now.
+- **Real projects:** Degen's daily burn and Alien Base's migration locks (ALB and esALB) are
+  monitored on mainnet. Coverage is deliberately small: Kept only adds a promise when the project's
+  own page states it, the address is declared or independently attributed, and the check cannot
+  produce a false breach. We screened about 90 Base projects for this release; most promises had no
+  address, no amount, an unenforced lock, or burns routed through shared contracts, so they were not
+  added. A false "Breached" against a real team is the one mistake Kept is designed never to make.
 - **Disputes:** anyone can dispute a record; a reviewer decides, and every decision is public.
 - **Reviewer console:** review queue, manual drafts, webhooks, Grifter runs.
 - **Infrastructure:** security headers, rate limits on real client IPs, secrets encrypted at rest,
