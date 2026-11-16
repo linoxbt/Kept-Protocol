@@ -57,7 +57,7 @@ method.
 
 - **Try it:** paste any docs URL or text and see SERV's extraction plus a chain check, labelled
   "Unconfirmed preview" and rate-limited. Each preview opens its own detail page, and previews of
-  public URLs are listed on the Explore dashboard (never in the commitments feed).
+  public URLs are listed on the Previews dashboard (never in the commitments feed).
 - **Live demo on mainnet:** Kept's own labelled token, promise, breach and rewrite. It went
   Verified → At risk (unfinalized) → Breached (final, second-provider confirmed) → retroactive
   revision flagged, and its Hindcast replay shows both versions on one timeline: same evidence,

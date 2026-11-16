@@ -46,3 +46,27 @@ export async function ensureShowcase(sql: Sql = db()): Promise<{ hindcast?: stri
   }
   return out.hindcast || out.grifter || out.error ? out : undefined;
 }
+
+let lastReplay = 0;
+
+/**
+ * Keeps Hindcast current: when a commitment has more than one version and no replay since its
+ * latest version was confirmed, run one (at most one per tick, every 10 minutes). Replays refuse
+ * history that has not been scanned yet, so a commitment still backfilling is simply retried later.
+ */
+export async function ensureReplays(sql: Sql = db()): Promise<{ replayed?: string; error?: string } | undefined> {
+  if (process.env.KEPT_REPLAY_AUTO === "0" || Date.now() - lastReplay < 600_000) return undefined;
+  lastReplay = Date.now();
+  const [due] = await sql<{ id: string }[]>`
+    select c.id from commitments c
+    join commitment_versions v on v.id = c.current_version_id
+    where v.version > 1
+      and not exists (select 1 from hindcast_runs h where h.commitment_id = c.id and h.created_at > v.confirmed_at)
+    order by v.confirmed_at limit 1`;
+  if (!due) return undefined;
+  try {
+    return { replayed: (await runHindcastFor(due.id, { refresh: true }, sql)).id };
+  } catch (e) {
+    return { error: `${due.id}: ${e instanceof Error ? e.message.slice(0, 200) : String(e)}` };
+  }
+}

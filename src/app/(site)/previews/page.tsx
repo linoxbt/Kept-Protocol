@@ -5,18 +5,18 @@ import { ago, Skeleton } from "@/components/ui";
 import { listPublicPreviews, publicPreviewStats, type PreviewListItem } from "@/services/previews";
 
 export const metadata = {
-  title: "Explore",
+  title: "Previews",
   description: "Every public page checked with Kept's try-it mode: the promises SERV found, and what Kept's code made of them.",
   robots: { index: false, follow: true },
 };
 
-export default function ExplorePage() {
+export default function PreviewsPage() {
   return (
     <div>
-      <p className="label mb-2">Explore</p>
+      <p className="label mb-2">Previews</p>
       <h1 className="title mb-4">Every page Kept has read</h1>
       <p className="text-muted text-sm mb-8 max-w-3xl">
-        Each row is a public page someone checked in <Link className="link" href="/try">Try it</Link>. Open one to see the promises SERV Reasoning found,
+        Each row is a public page someone checked with <Link className="link" href="/try">Check a page</Link>. Open one to see the promises SERV Reasoning found,
         what Kept&apos;s code verified against the page, and any chain checks. These are <span className="text-ink">unconfirmed previews</span>: not
         reviewed, not monitored, and never a verdict about a project. Monitored commitments are under <Link className="link" href="/projects">Projects</Link>.
       </p>

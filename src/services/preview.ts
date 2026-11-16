@@ -3,7 +3,7 @@
  * shows, without an account. Guard rails:
  *  - every draft and result is an "Unconfirmed preview": never reviewed, never in the commitments feed;
  *  - every subject is `unconfirmed`, so the worst status a preview can show is At risk;
- *  - previews of public URLs are listed on /explore for 30 days (noindex); pasted text is reachable
+ *  - previews of public URLs are listed on /previews for 30 days (noindex); pasted text is reachable
  *    only through its own link and expires after 24 hours;
  *  - per-requester hourly limit and the shared daily SERV budget.
  */
@@ -77,6 +77,17 @@ export interface PreviewCheck {
   as_of_block: string;
   complete: boolean;
   checked_at: string;
+  /** Values the visitor supplied because the page did not state them. */
+  visitor_supplied?: Record<string, unknown>;
+}
+
+/** Gaps a visitor may fill for an unconfirmed check. Everything else must come from the page. */
+export interface SuppliedValues {
+  window_start?: string | null;
+  window_end?: string | null;
+  duration_months?: number | null;
+  amount?: string | null;
+  subject_address?: string | null;
 }
 
 type PreviewInput = {
@@ -85,6 +96,7 @@ type PreviewInput = {
   tokenAddress?: string | null;
   methodId?: MethodId;
   requester: string;
+  supplied?: SuppliedValues;
 };
 
 export async function previewCheck(
@@ -108,6 +120,21 @@ export async function preparePreviewCheck(
   if (!limit.allowed) throw new RateLimited(limit.resetAt);
   const ex = await getExtraction(input.extractionId, sql);
   if (!ex?.preview) throw new Invalid("not a preview");
+  const supplied = Object.fromEntries(Object.entries(input.supplied ?? {}).filter(([, v]) => v !== null && v !== undefined && v !== "")) as SuppliedValues;
+  let edits: Record<string, unknown> | undefined;
+  if (Object.keys(supplied).length) {
+    const draft = ex.result?.drafts[input.draftIndex];
+    if (!draft?.fields) throw new Invalid("that commitment has no structured fields");
+    edits = { ...supplied };
+    delete edits.subject_address;
+    if (supplied.subject_address) {
+      if (!/^0x[0-9a-fA-F]{40}$/.test(supplied.subject_address)) throw new Invalid("the wallet address is not a valid address");
+      const others = draft.fields.subjects.filter((s) => /^0x[0-9a-fA-F]{40}$/.test(s.address));
+      edits.subjects = [{ address: supplied.subject_address, role: draft.fields.category === "burn" ? "executor" : draft.fields.category === "vesting" ? "vesting" : "holder", label: "supplied by a visitor" }, ...others];
+      if (draft.fields.category === "vesting") edits.vesting_contract = supplied.subject_address;
+    }
+    if (supplied.amount !== undefined && !/^\d+(\.\d+)?$/.test(String(supplied.amount))) throw new Invalid("the amount must be a plain number");
+  }
   const { spec } = await prepareSpec(
     {
       extractionId: input.extractionId,
@@ -115,9 +142,10 @@ export async function preparePreviewCheck(
       tokenAddress: input.tokenAddress,
       methodId: input.methodId,
       reviewer: "preview",
+      edits,
     },
     sql,
-    { previewAttribution: true },
+    { previewAttribution: true, visitorSupplied: !!edits },
   );
   return async () => {
     const { decision, result, collected } = await evaluate(spec, sql, {
@@ -139,6 +167,7 @@ export async function preparePreviewCheck(
       as_of_block: collected.evidence.finalizedBlock.toString(),
       complete: collected.complete,
       checked_at: new Date().toISOString(),
+      ...(Object.keys(supplied).length ? { visitor_supplied: supplied as Record<string, unknown> } : {}),
     };
     await sql`update extractions set result = jsonb_set(coalesce(result, '{}'::jsonb), ${sql.array(["previews", String(input.draftIndex)])}::text[], ${sql.json(out as never)}, true)
             where id = ${input.extractionId}`;

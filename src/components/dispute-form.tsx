@@ -11,6 +11,18 @@ export function DisputeForm({ commitmentId }: { commitmentId: string }) {
   const [contact, setContact] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [filed, setFiled] = useState<string | null>(null);
+  if (filed) {
+    return (
+      <div className="border border-verified/50 p-5 max-w-2xl" role="status">
+        <p className="subtitle mb-1">Dispute filed</p>
+        <p className="text-sm text-muted">
+          Reference <span className="mono text-ink">{filed}</span>. It is listed below as awaiting review. A reviewer will read it and either accept it (the record
+          then shows Disputed until resolved), reject it, or resolve it, and the decision is published on this page.
+        </p>
+      </div>
+    );
+  }
   if (!open) {
     return (
       <button className="btn btn-quiet" onClick={() => setOpen(true)}>
@@ -34,11 +46,13 @@ export function DisputeForm({ commitmentId }: { commitmentId: string }) {
           const j = (await res.json().catch(() => ({}))) as Record<string, unknown>;
           if (!res.ok) setMsg({ ok: false, text: String(j.detail ?? j.title ?? res.statusText) });
           else {
-            setMsg({ ok: true, text: "Dispute filed. A reviewer will look at it; its status is shown below." });
+            setFiled(String(j.id ?? "filed"));
             setReason("");
             setEvidence("");
             router.refresh();
           }
+        } catch (e) {
+          setMsg({ ok: false, text: e instanceof Error ? e.message : "the dispute could not be sent" });
         } finally {
           setBusy(false);
         }

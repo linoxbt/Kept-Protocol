@@ -1,5 +1,5 @@
 import type { Status } from "@/core/types";
-import { STATUS_LABEL } from "@/core/status";
+import { STATUS_HELP, STATUS_LABEL } from "@/core/status";
 
 const COLOR: Record<Status, string> = {
   verified: "var(--color-verified)",
@@ -22,6 +22,7 @@ export function StatusChip({ status, final, size = "sm" }: { status: Status; fin
   const lg = size === "lg";
   return (
     <span
+      title={STATUS_HELP[status]}
       className={`mono inline-flex items-center gap-2 whitespace-nowrap rounded-full border ${lg ? "text-[15px] px-4 h-10" : "text-[12px] px-2.5 h-6"}`}
       style={{ borderColor: `color-mix(in srgb, ${c} 35%, transparent)`, color: "var(--color-ink)" }}
     >

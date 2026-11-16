@@ -8,6 +8,7 @@ import { METHOD_LIMITATIONS } from "@/services/verify";
 import { Addr, Hash, Tx } from "@/components/addr";
 import { ActionButton, DisputeDecision } from "@/components/admin-actions";
 import { DisputeForm } from "@/components/dispute-form";
+import { FollowForm } from "@/components/follow-form";
 import { listDisputes } from "@/services/disputes";
 import { StatusChip } from "@/components/status";
 import { TimeBar } from "@/components/timebar";
@@ -15,6 +16,16 @@ import { ago, DemoBadge, fmtDate, nowSeconds, prettyReason, Section, Skeleton } 
 import { diffVersions } from "@/services/precedent";
 import { isAdminSession } from "@/lib/session";
 import { commitmentDetail } from "@/services/queries";
+
+import type { Metadata } from "next";
+import { commitmentShare, statusLabel } from "@/services/share";
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const c = await commitmentShare((await params).id).catch(() => null);
+  if (!c) return { title: "Commitment" };
+  const title = `${c.project}: ${statusLabel(c.status, c.final)}`;
+  return { title, description: c.summary ?? undefined, openGraph: { title: `${title} · Kept`, description: c.summary ?? undefined }, twitter: { card: "summary_large_image" } };
+}
 
 export default function CommitmentPage({ params }: { params: Promise<{ id: string }> }) {
   return (
@@ -146,6 +157,7 @@ async function Commitment({ params }: { params: Promise<{ id: string }> }) {
               {ago(d.commitment.last_checked_at)}
             </p>
             {lastError ? <p className="text-xs text-atrisk mt-2">Latest check failed, retrying. The status above is the last good one.</p> : null}
+            <Link href={`/methodology#status-${d.commitment.status}`} className="link text-xs mt-2 inline-block">What this status means →</Link>
           </div>
           <div>
             <TimeBar now={nowSeconds()} windows={[{ label: `v${d.version.version}`, start: Date.parse(s.window.start) / 1000, end: Date.parse(s.window.end) / 1000 }]} events={events} />
@@ -185,20 +197,20 @@ async function Commitment({ params }: { params: Promise<{ id: string }> }) {
       ) : null}
 
       {/* History band */}
-      <div className="grid lg:grid-cols-2 gap-8">
+      <div className="grid lg:grid-cols-2 gap-8 [&>*]:min-w-0">
         <Section title="Status history">
           <ul className="panel divide-y divide-line text-sm">
             {d.changes.length === 0 ? <li className="p-3 text-muted">{d.checks.length ? `No status changes yet: ${d.checks.length} check(s) so far, all ${d.commitment.status.replace("_", " ")}.` : "No checks yet."}</li> : null}
             {d.changes.map((c) => (
-              <li key={c.id} className="p-3 flex gap-3 items-start">
-                <span className="mono text-xs text-muted w-36 shrink-0">{fmtDate(c.at, true)}</span>
+              <li key={c.id} className="p-3 flex flex-col sm:flex-row gap-1 sm:gap-3 items-start">
+                <span className="mono text-xs text-muted sm:w-36 shrink-0">{fmtDate(c.at, true)}</span>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     {c.from_status ? <span className="mono text-xs text-muted">{c.from_status} →</span> : null}
                     <StatusChip status={c.to_status} final={c.final} />
                     {c.receipt_id ? <Link className="link mono text-xs" href={`/receipts/${c.receipt_id}`}>receipt</Link> : null}
                   </div>
-                  <p className="text-xs text-muted mt-1">{prettyReason(c.reason)}</p>
+                  <p className="text-xs text-muted mt-1 [overflow-wrap:anywhere]">{prettyReason(c.reason)}</p>
                 </div>
               </li>
             ))}
@@ -254,6 +266,15 @@ async function Commitment({ params }: { params: Promise<{ id: string }> }) {
           <p className="text-sm text-muted mb-4">No disputes filed.</p>
         )}
         <DisputeForm commitmentId={d.commitment.id} />
+      </Section>
+
+      <Section title="Follow this commitment">
+        <p className="text-sm text-muted mb-4 max-w-3xl">
+          Get every change to this commitment (a new status, a breach, a rewritten promise, a dispute, an approaching deadline) delivered to your own HTTPS
+          endpoint as a signed webhook. Machines can also poll <a className="link mono" href={`/api/v1/commitments/${d.commitment.id}`}>the record</a> or{" "}
+          <Link className="link" href="/activity">the activity feed</Link>.
+        </p>
+        <FollowForm commitmentId={d.commitment.id} />
       </Section>
 
       <Section title="Source snapshot">

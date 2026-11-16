@@ -160,6 +160,17 @@ export function violationSentence(spec: CommitmentSpec, result: MethodResult): s
   return `${value} left ${t?.from ?? "subject addresses"} on day ${day} of a ${len}-day window (allowed: ${limit})`;
 }
 
+/** One-sentence public definition of each status (Methodology, chip tooltips, record pages). */
+export const STATUS_HELP: Record<Status, string> = {
+  pending: "Confirmed, but the window has not started yet, or a target (such as a burn) is still in progress.",
+  awaiting_evidence: "Kept is still reading the chain history this promise covers; no verdict until it has all of it.",
+  verified: "The condition holds on finalized blocks. 'To date' while the window is open; 'final' once it has closed.",
+  at_risk: "Something may break the promise: an outflow not yet finalized, a contract faster than stated, unconfirmed attribution, or a violation awaiting a second provider.",
+  breached: "The stated condition was not met on finalized blocks, the wallet is attributed to the project, and a second provider confirmed it. Final, and a later rewrite cannot undo it.",
+  unverifiable: "The promise as written cannot be checked against token transfers.",
+  disputed: "Someone disputed this record and a reviewer accepted it for review; the mechanical result is shown alongside.",
+};
+
 export const STATUS_LABEL: Record<Status, string> = {
   pending: "Pending",
   awaiting_evidence: "Awaiting evidence",

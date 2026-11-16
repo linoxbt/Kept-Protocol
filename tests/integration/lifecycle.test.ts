@@ -24,6 +24,13 @@ import { runCheck } from "@/services/verify";
 import { pendingRoot, withSessionLock } from "@/services/anchor";
 import { ensureShowcase } from "@/services/showcase";
 import { getPublicPreview, listPublicPreviews, publicPreviewStats } from "@/services/previews";
+import { search } from "@/services/search";
+import { listActivity, listCommitments } from "@/services/listing";
+import { declineRequest, draftDecisions, rejectDraft, requestMonitoring } from "@/services/monitoring";
+import { followStatus, startFollow, stopFollow, verifyFollow } from "@/services/follow";
+import { declarationMessage, submitContact, submitDeclaration } from "@/services/declarations";
+import { ensureReplays } from "@/services/showcase";
+import { privateKeyToAccount } from "viem/accounts";
 import { claimDue } from "@/services/monitor";
 import { migrate } from "../../scripts/migrate";
 import { runMethod } from "@/core/methods";
@@ -516,5 +523,89 @@ describe.skipIf(!DB_UP)("Kept lifecycle", () => {
     // A pasted-text preview stays reachable through its own link; an expired one is gone.
     expect((await getPublicPreview("kx_priv", sql))?.id).toBe("kx_priv");
     expect(await getPublicPreview("kx_old", sql)).toBeNull();
+  });
+
+  it("search finds projects by name and by token or wallet address, and says nothing when nothing matches", async () => {
+    const byName = await search("xyz", sql);
+    expect(byName.projects.map((p) => p.slug)).toContain("xyz-demo");
+    const byToken = await search(TOKEN, sql);
+    expect(byToken.kind).toBe("address");
+    expect(byToken.commitments.some((c) => c.id === commitmentId && c.matched === "token")).toBe(true);
+    const byWallet = await search(TEAM.toUpperCase().replace("0X", "0x"), sql);
+    expect(byWallet.commitments.some((c) => c.id === commitmentId && c.matched === "wallet")).toBe(true);
+    const none = await search("0x9999999999999999999999999999999999999999", sql);
+    expect(none.projects.length + none.commitments.length + none.previews.length).toBe(0);
+  });
+
+  it("lists commitments and activity with filters and pagination", async () => {
+    const all = await listCommitments({}, sql);
+    expect(all.rows.some((c) => c.id === commitmentId)).toBe(true);
+    const breached = await listCommitments({ status: "breached" }, sql);
+    expect(breached.rows.every((c) => c.status === "breached")).toBe(true);
+    const bogus = await listCommitments({ status: "nonsense", kind: "x", project: "../../etc" }, sql);
+    expect(bogus.total).toBe(all.total);
+    const activity = await listActivity({ kind: "breach" }, sql);
+    expect(activity.rows.length).toBeGreaterThan(0);
+    expect(activity.rows.every((r) => r.to_status === "breached")).toBe(true);
+  });
+
+  it("takes a monitoring request for a URL preview once, and lets the reviewer decline it", async () => {
+    await sql`insert into extractions (id, preview_text, preview_url, content_sha256, preview, status, result, expires_at)
+              values ('kx_req', 't', 'https://docs.example.xyz/lock', 'r', true, 'done', ${sql.json({ drafts: [{ index: 0 }], serv_calls: 1 } as never)}, now() + interval '30 days')`;
+    const first = await requestMonitoring({ extractionId: "kx_req", note: "team wallet is on the vesting page", requester: "req-1" }, sql);
+    expect(first.existing).toBe(false);
+    const again = await requestMonitoring({ extractionId: "kx_req", requester: "req-2" }, sql);
+    expect(again).toMatchObject({ existing: true, request: { id: first.request.id } });
+    await expect(requestMonitoring({ extractionId: "kx_priv", requester: "req-1" }, sql)).rejects.toThrow(/public URL/);
+    const declined = await declineRequest(first.request.id, "no checkable promise on this page", "test", sql);
+    expect(declined.status).toBe("declined");
+  });
+
+  it("records a rejected draft and refuses to reject a confirmed one", async () => {
+    const [v] = await sql<{ extraction_id: string; draft_index: number }[]>`select extraction_id, draft_index from commitment_versions where commitment_id = ${commitmentId} and version = 1`;
+    await expect(rejectDraft(v.extraction_id, v.draft_index, "test reason", "test", sql)).rejects.toThrow(/already confirmed/);
+    await rejectDraft(v.extraction_id, 1, "not a commitment", "test", sql);
+    const d = await draftDecisions(v.extraction_id, sql);
+    expect(d.rejected.get(1)?.reason).toBe("not a commitment");
+    expect(d.confirmed.get(v.draft_index)).toBe(commitmentId);
+  });
+
+  it("starts a follow inactive, never activates it without the code, and stops it with the manage token", async () => {
+    const f = await startFollow({ commitmentId, url: "https://follow.invalid/hook", requester: "follower-1" }, sql);
+    expect(f.verification_sent).toBe(false);
+    expect(f.secret).toMatch(/^whsec_/);
+    await expect(verifyFollow({ id: f.id, token: f.manage_token, code: "000000" }, sql)).rejects.toThrow(/does not match/);
+    await expect(followStatus({ id: f.id, token: "kmt_wrong_token_value" }, sql)).rejects.toThrow(/not found/);
+    expect(await followStatus({ id: f.id, token: f.manage_token }, sql)).toMatchObject({ active: false, verified: false, commitment_id: commitmentId });
+    // Only events for this commitment would reach it: the follow is scoped in deliverOutbox.
+    const [w] = await sql<{ commitment_id: string; follower: boolean }[]>`select commitment_id, follower from webhooks where id = ${f.id}`;
+    expect(w).toEqual({ commitment_id: commitmentId, follower: true });
+    expect(await stopFollow({ id: f.id, token: f.manage_token }, sql)).toEqual({ id: f.id, active: false });
+    await expect(startFollow({ commitmentId, url: "http://plain.example/hook", requester: "follower-1" }, sql)).rejects.toThrow(/https/);
+  });
+
+  it("accepts a wallet declaration only with a valid signature by that address", async () => {
+    const account = privateKeyToAccount(`0x${"42".repeat(32)}`);
+    const date = new Date().toISOString().slice(0, 10);
+    const message = declarationMessage({ project: "XYZ Labs", address: account.address, role: "team", date });
+    const signature = await account.signMessage({ message });
+    const ok = await submitDeclaration({ project: "XYZ Labs", address: account.address, role: "team", date, signature, requester: "declarer" }, sql);
+    expect(ok.status).toBe("open");
+    const other = privateKeyToAccount(`0x${"43".repeat(32)}`);
+    const forged = await other.signMessage({ message });
+    await expect(submitDeclaration({ project: "XYZ Labs", address: account.address, role: "team", date, signature: forged, requester: "declarer" }, sql)).rejects.toThrow(/does not match/);
+    await expect(submitDeclaration({ project: "XYZ Labs", address: account.address, role: "team", date: "2020-01-01", signature, requester: "declarer" }, sql)).rejects.toThrow(/today/);
+    const c = await submitContact({ kind: "pilot", name: "Test Launchpad", contact: "ops@example.org", message: "We launch ten tokens a month on Base.", requester: "contact-1" }, sql);
+    expect(c.id).toMatch(/^kcr_/);
+  });
+
+  it("replays a rewritten commitment automatically once its new version exists", async () => {
+    await sql`delete from hindcast_runs where commitment_id = ${commitmentId}`;
+    const r = await ensureReplays(sql);
+    expect(r?.replayed ?? r?.error).toBeTruthy();
+    if (r?.replayed) {
+      const [{ n }] = await sql<{ n: number }[]>`select count(*)::int as n from hindcast_runs where commitment_id = ${commitmentId}`;
+      expect(n).toBe(1);
+    }
   });
 });

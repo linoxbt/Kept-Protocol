@@ -13,9 +13,9 @@ export const metadata: Metadata = {
 
 const NAV = [
   ["Projects", "/projects"],
-  ["Explore", "/explore"],
-  ["Try it", "/try"],
-  ["Grifter", "/grifter"],
+  ["Commitments", "/commitments"],
+  ["Previews", "/previews"],
+  ["How it works", "/methodology"],
   ["API", "/docs"],
 ] as const;
 
@@ -36,10 +36,13 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                 </Link>
               ))}
             </div>
+            <Link href="/search" aria-label="Search" title="Search projects, tokens and wallets" className="hidden md:inline-flex h-10 w-10 items-center justify-center rounded-xl text-muted hover:text-ink hover:bg-panel-2 transition-colors">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+            </Link>
             <details className="md:hidden relative">
               <summary className="list-none cursor-pointer h-10 px-3 inline-flex items-center label !text-ink">Menu</summary>
               <div className="absolute right-0 top-12 w-48 rounded-xl border border-line-strong bg-panel p-2 flex flex-col">
-                {NAV.map(([label, href]) => (
+                {[...NAV, ["Search", "/search"] as const].map(([label, href]) => (
                   <Link key={href} href={href} className="px-3 py-2.5 rounded-lg text-sm hover:bg-panel-2">
                     {label}
                   </Link>
@@ -47,14 +50,14 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
               </div>
             </details>
             <Link href="/try" className="h-10 px-4 inline-flex items-center rounded-xl bg-accent text-white text-[14px] font-medium hover:brightness-110 transition">
-              Check a project
+              Check a page
             </Link>
           </nav>
         </header>
         <main className="flex-1 w-full">{children}</main>
         <footer className="border-t border-line mt-24">
           <div className="container-k py-14 grid gap-10 md:grid-cols-12">
-            <div className="md:col-span-5">
+            <div className="md:col-span-4">
               <p className="subtitle max-w-md">
                 Code decides facts. <span className="serif italic text-muted">SERV reads the promises.</span>
               </p>
@@ -62,24 +65,13 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                 Breaches are mechanical facts about stated conditions, never judgments of intent. Not investment advice.
               </p>
             </div>
-            <div className="md:col-span-2 md:col-start-8 space-y-2.5">
-              <p className="label mb-3">Product</p>
-              <Link className="block text-sm text-muted hover:text-ink" href="/projects">Projects</Link>
-              <Link className="block text-sm text-muted hover:text-ink" href="/try">Try it</Link>
-              <Link className="block text-sm text-muted hover:text-ink" href="/explore">Explore</Link>
-              <Link className="block text-sm text-muted hover:text-ink" href="/grifter">Grifter</Link>
-            </div>
-            <div className="md:col-span-2 space-y-2.5">
-              <p className="label mb-3">Developers</p>
-              <Link className="block text-sm text-muted hover:text-ink" href="/docs">API</Link>
-              <a className="block text-sm text-muted hover:text-ink" href="/api/v1/openapi.json">OpenAPI</a>
-              <Link className="block text-sm text-muted hover:text-ink" href="/docs#verify">Verify a receipt</Link>
-              <a className="block text-sm text-muted hover:text-ink" href="/.well-known/agent-card.json">Agent card</a>
-            </div>
-            <div className="md:col-span-1 space-y-2.5">
-              <p className="label mb-3">System</p>
-              <a className="block text-sm text-muted hover:text-ink" href="/api/v1/health">Status</a>
-            </div>
+            <FooterGroup
+              title="Product"
+              links={[["Projects", "/projects"], ["Commitments", "/commitments"], ["Activity", "/activity"], ["Previews", "/previews"], ["Check a page", "/try"], ["Search", "/search"]]}
+            />
+            <FooterGroup title="Trust" links={[["How it works", "/methodology"], ["Status & integrity", "/status"], ["Adversarial tests", "/grifter"], ["Verify a receipt", "/docs#verify"]]} />
+            <FooterGroup title="Developers" links={[["API docs", "/docs"], ["OpenAPI", "/api/v1/openapi.json"], ["Agent card", "/.well-known/agent-card.json"]]} />
+            <FooterGroup title="For projects" links={[["For projects", "/for-projects"], ["Declare a wallet", "/for-projects#declare"], ["Pricing & pilots", "/for-projects#pricing"]]} />
           </div>
           <div className="container-k overflow-hidden">
             <p className="select-none font-medium tracking-[-0.07em] leading-[0.78] text-[clamp(6rem,24vw,22rem)] text-transparent [-webkit-text-stroke:1px_var(--color-line-strong)] -mb-[0.12em]">
@@ -99,5 +91,20 @@ function Mark() {
       <path d="M0.5 7V0.5H7M21.5 15v6.5H15" fill="none" stroke="var(--color-accent)" strokeWidth="1.5" />
       <path d="M6.5 11.2l3 3 6-6.4" fill="none" stroke="var(--color-ink)" strokeWidth="1.6" />
     </svg>
+  );
+}
+
+function FooterGroup({ title, links }: { title: string; links: [string, string][] }) {
+  return (
+    <div className="md:col-span-2 space-y-2.5">
+      <p className="label mb-3">{title}</p>
+      {links.map(([label, href]) =>
+        href.startsWith("/api/") || href.startsWith("/.well-known/") ? (
+          <a key={href} className="block text-sm text-muted hover:text-ink" href={href}>{label}</a>
+        ) : (
+          <Link key={href} className="block text-sm text-muted hover:text-ink" href={href}>{label}</Link>
+        ),
+      )}
+    </div>
   );
 }

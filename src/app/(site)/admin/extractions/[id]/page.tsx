@@ -5,7 +5,8 @@ import { Suspense } from "react";
 import { db } from "@/db/client";
 import { isAdminSession } from "@/lib/session";
 import { getExtraction } from "@/services/extractions";
-import { ConfirmDraftForm } from "@/components/admin-forms";
+import { ConfirmDraftForm, RejectDraftForm } from "@/components/admin-forms";
+import { draftDecisions } from "@/services/monitoring";
 import { Flag, Skeleton } from "@/components/ui";
 
 export const metadata = { title: "Review extraction" };
@@ -26,6 +27,7 @@ async function Review({ params }: { params: Promise<{ id: string }> }) {
   if (!ex || !ex.result) notFound();
   const [snap] = ex.snapshot_id ? await db()<{ text: string; captured_at: Date }[]>`select text, captured_at from source_snapshots where id = ${ex.snapshot_id}` : [];
   const [project] = ex.project_id ? await db()<{ token_address: string | null }[]>`select token_address from projects where id = ${ex.project_id}` : [];
+  const decisions = await draftDecisions(ex.id);
   const text = snap?.text ?? ex.preview_text ?? "";
   const spans = [...ex.result.drafts].sort((a, b) => a.start - b.start);
   const pieces: React.ReactNode[] = [];
@@ -54,7 +56,12 @@ async function Review({ params }: { params: Promise<{ id: string }> }) {
               <div className="flex flex-wrap gap-1.5 mb-2">{d.flags.map((f) => <Flag key={f} name={f} />)}</div>
               {d.problems.length ? <ul className="text-xs text-atrisk list-disc pl-5 mb-2">{d.problems.map((p) => <li key={p}>{p}</li>)}</ul> : null}
               {d.fields ? <pre className="mono text-[11px] text-muted bg-bg p-2 overflow-auto max-h-48">{JSON.stringify(d.fields, null, 2)}</pre> : <p className="text-xs text-breached">{d.error}</p>}
-              {d.fields && d.classification?.method_id !== "none" ? (
+              {decisions.confirmed.has(d.index) ? (
+                <p className="text-sm text-verified mt-2">Confirmed as <Link className="link mono" href={`/commitments/${decisions.confirmed.get(d.index)}`}>{decisions.confirmed.get(d.index)}</Link>.</p>
+              ) : decisions.rejected.has(d.index) ? (
+                <p className="text-sm text-muted mt-2">Rejected: {decisions.rejected.get(d.index)!.reason}</p>
+              ) : d.fields && d.classification?.method_id !== "none" ? (
+                <>
                 <ConfirmDraftForm
                   extractionId={ex.id}
                   targetCommitmentId={ex.target_commitment_id}
@@ -69,6 +76,8 @@ async function Review({ params }: { params: Promise<{ id: string }> }) {
                     fields: d.fields,
                   }}
                 />
+                {ex.preview ? null : <RejectDraftForm extractionId={ex.id} index={d.index} />}
+                </>
               ) : (
                 <p className="text-xs text-muted mt-2">No registered method: recorded and versioned for change tracking, not monitored.</p>
               )}

@@ -53,3 +53,42 @@ export function nowSeconds(): number {
 export function prettyReason(reason: string | null | undefined): string {
   return (reason ?? "").replace(/0x[0-9a-fA-F]{40}/g, (a) => `${a.slice(0, 6)}…${a.slice(-4)}`);
 }
+
+/** Builds a link that keeps the current filters and changes one of them. */
+export function withParams(base: string, params: Record<string, string | number | null | undefined>): string {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v !== null && v !== undefined && v !== "" && !(k === "page" && v === 1)) q.set(k, String(v));
+  const s = q.toString();
+  return s ? `${base}?${s}` : base;
+}
+
+/** A row of filter links; the active one is highlighted. */
+export function FilterChips({ label, options, active, href }: { label: string; options: [string | null, string][]; active: string | null; href: (value: string | null) => string }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2" role="group" aria-label={label}>
+      <span className="label mr-1">{label}</span>
+      {options.map(([value, text]) => (
+        <a
+          key={value ?? "all"}
+          href={href(value)}
+          aria-current={value === active ? "true" : undefined}
+          className={`mono text-[11px] px-2.5 h-7 inline-flex items-center rounded-full border transition-colors ${value === active ? "border-accent text-ink" : "border-line-strong text-muted hover:text-ink"}`}
+        >
+          {text}
+        </a>
+      ))}
+    </div>
+  );
+}
+
+/** Previous / next pagination with a position label. */
+export function Pager({ page, pages, total, href }: { page: number; pages: number; total: number; href: (page: number) => string }) {
+  if (pages <= 1) return <p className="text-xs text-muted mt-4">{total} result{total === 1 ? "" : "s"}</p>;
+  return (
+    <nav className="flex items-center gap-3 mt-6 text-sm" aria-label="Pagination">
+      {page > 1 ? <a className="btn-quiet" href={href(page - 1)}>← Newer</a> : null}
+      <span className="text-xs text-muted">Page {page} of {pages} · {total} results</span>
+      {page < pages ? <a className="btn-quiet" href={href(page + 1)}>Older →</a> : null}
+    </nav>
+  );
+}

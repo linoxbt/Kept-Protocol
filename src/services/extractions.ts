@@ -199,14 +199,16 @@ export interface PreparedSpec {
 }
 
 /** Turns a draft (plus grounded reviewer edits) into a spec. Shared by confirm and try-it previews. */
-export async function prepareSpec(req: ConfirmRequest, sql: Sql = db(), opts: { previewAttribution?: boolean } = {}): Promise<PreparedSpec> {
+export async function prepareSpec(req: ConfirmRequest, sql: Sql = db(), opts: { previewAttribution?: boolean; visitorSupplied?: boolean } = {}): Promise<PreparedSpec> {
   const extraction = await getExtraction(req.extractionId, sql);
   if (!extraction || extraction.status !== "done" || !extraction.result) throw new NotFound("extraction not found or not finished");
   const draft = extraction.result.drafts[req.draftIndex];
   if (!draft?.fields) throw new Invalid("that draft has no structured fields to confirm");
   const merged = ExtractOut.safeParse({ ...draft.fields, ...(req.edits ?? {}) });
   if (!merged.success) throw new Invalid(merged.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "));
-  if (req.edits && Object.keys(req.edits).length) {
+  // A preview visitor may fill gaps the page leaves (labelled visitor-supplied, never confirmed, and a
+  // preview can never show Breached); reviewer edits must still match the source text.
+  if (req.edits && Object.keys(req.edits).length && !opts.visitorSupplied) {
     const before = new Set(checkGrounding(draft.fields, draft.quote, draft.context, { derivedBy: "reviewer" }).flags.filter((f) => f.startsWith("UNGROUNDED")));
     const after = checkGrounding(merged.data, draft.quote, draft.context, { derivedBy: "reviewer" }).flags.filter((f) => f.startsWith("UNGROUNDED") && !before.has(f));
     if (after.length) throw new Conflict(`edits must match the source text (${after.join(", ")}); publish a new source or declare the value as derived`);

@@ -7,14 +7,24 @@ import type { Status } from "@/core/types";
 import type { Draft } from "@/extraction/pipeline";
 import { Addr, Hash } from "@/components/addr";
 import { Corners } from "@/components/corners";
-import { PreviewCheckForm, RefreshWhileRunning } from "@/components/preview-check";
+import { PreviewCheckForm, RefreshWhileRunning, RequestMonitoring } from "@/components/preview-check";
 import { StatusChip } from "@/components/status";
 import { ago, fmtDate, prettyReason, Skeleton } from "@/components/ui";
 import type { PreviewCheck } from "@/services/preview";
 import { FLAG_HELP, getPublicPreview } from "@/services/previews";
 
+import type { Metadata } from "next";
+import { hostOf, previewShare } from "@/services/share";
+
 // Unreviewed AI readings of real projects' pages: never offered to search engines as facts.
-export const metadata = { title: "Preview", robots: { index: false, follow: false } };
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const p = await previewShare((await params).id).catch(() => null);
+  const robots = { index: false, follow: false };
+  if (!p) return { title: "Preview", robots };
+  const title = `Preview of ${hostOf(p.url)}`;
+  const description = p.status === "done" ? `${p.drafts} promise${p.drafts === 1 ? "" : "s"} found by SERV and checked by Kept's code. Unconfirmed preview: not reviewed, not monitored.` : "Unconfirmed preview.";
+  return { title, description, robots, openGraph: { title: `${title} · Kept`, description }, twitter: { card: "summary_large_image" } };
+}
 
 export default function PreviewPage({ params }: { params: Promise<{ id: string }> }) {
   return (
@@ -117,7 +127,13 @@ async function Preview({ params }: { params: Promise<{ id: string }> }) {
   const ex = await getPublicPreview(id);
   if (!ex) notFound();
   const result = ex.result;
-  const drafts = result?.drafts ?? [];
+  // Older or manual records may lack some draft fields; normalise once so every card renders.
+  const drafts: Draft[] = (result?.drafts ?? []).map((d) => ({
+    ...d,
+    flags: d.flags ?? [],
+    problems: d.problems ?? [],
+    confidence: d.confidence ?? { grounding: false, classifier_agreement: false, rules_agreement: false },
+  }));
   const checks = (result?.previews ?? {}) as Record<string, PreviewCheck>;
   const checkable = drafts.filter((d) => METHOD[d.classification?.method_id ?? "none"]);
   const ready = drafts.filter((d) => verdict(d).label === "Ready to check");
@@ -126,7 +142,7 @@ async function Preview({ params }: { params: Promise<{ id: string }> }) {
   return (
     <div className="max-w-5xl">
       <RefreshWhileRunning running={ex.status === "running"} />
-      <Link href="/explore" className="label u !text-muted hover:!text-ink">← Explore</Link>
+      <Link href="/previews" className="label u !text-muted hover:!text-ink">← Previews</Link>
 
       <header className="mt-6 mb-8">
         <p className="label mb-2">Commitment preview</p>
@@ -206,6 +222,17 @@ async function Preview({ params }: { params: Promise<{ id: string }> }) {
             )}
           </section>
 
+          {ex.preview_url && drafts.length ? (
+            <section className="mb-14">
+              <h2 className="label border-t border-line pt-4 mb-4">Want Kept to monitor this project?</h2>
+              <p className="text-sm text-muted mb-5 max-w-3xl">
+                A preview is never monitored. Ask for a review: a Kept reviewer reads {site}, confirms which promises can be checked and whose wallets they cover,
+                and adds them to monitoring, where they are checked on every new finalized block range and proved with signed receipts.
+              </p>
+              <RequestMonitoring id={ex.id} />
+            </section>
+          ) : null}
+
           {result?.dropped_spans?.length ? (
             <section className="mb-14">
               <h2 className="label border-t border-line pt-4 mb-4">Passages Kept set aside ({result.dropped_spans.length})</h2>
@@ -233,7 +260,7 @@ async function Preview({ params }: { params: Promise<{ id: string }> }) {
 
       <div className="flex flex-wrap gap-3">
         <Link className="btn" href="/try">Check another page</Link>
-        <Link className="btn-quiet" href="/explore">See all previews</Link>
+        <Link className="btn-quiet" href="/previews">See all previews</Link>
       </div>
     </div>
   );
@@ -315,6 +342,11 @@ function CommitmentCard({ id, d, check }: { id: string; d: Draft; check?: Previe
         <div className="border-t border-line pt-4">
           <p className="label mb-2">Chain check · {fmtDate(check.checked_at, true)}</p>
           <p className="text-sm">{prettyReason(check.reason)}</p>
+          {check.visitor_supplied ? (
+            <p className="text-xs text-atrisk mt-1">
+              Visitor-supplied values: {Object.entries(check.visitor_supplied).map(([k, v]) => `${k.replace(/_/g, " ")} ${String(v)}`).join(" · ")}. Not stated on the page.
+            </p>
+          ) : null}
           <p className="mono text-xs text-muted mt-1">
             {formatUnits(BigInt(check.computed_value), check.decimals)} of {formatUnits(BigInt(check.threshold_base_units), check.decimals)} {check.symbol ?? ""} · {check.evidence_count}{" "}
             transfer(s) · as of Base block {check.as_of_block}
@@ -322,7 +354,23 @@ function CommitmentCard({ id, d, check }: { id: string; d: Draft; check?: Previe
           </p>
         </div>
       ) : METHOD[method] && missing(d).length ? (
-        <p className="border-t border-line pt-4 text-xs text-muted">A chain check needs {missing(d).join(", ")} first, so none can run from this page.</p>
+        <div className="border-t border-line pt-4">
+          <p className="text-xs text-muted mb-3">
+            The page does not state {missing(d).join(", ")}. If you know them (for example from the project&apos;s other pages or an explorer), you can supply them to run
+            an unconfirmed check. Your values are labelled visitor-supplied on the result and never treated as the project&apos;s words.
+          </p>
+          <PreviewCheckForm
+            id={id}
+            index={d.index}
+            token={f?.token_address && isAddress(f.token_address) ? f.token_address : null}
+            needs={{
+              start: !f?.window_start,
+              end: !f?.window_end && !f?.duration_months,
+              address: method === "vesting_schedule_v1" ? !(f?.vesting_contract && isAddress(f.vesting_contract)) : !f?.subjects.some((s) => isAddress(s.address)),
+              amount: f?.amount === null || f?.amount === undefined || f?.amount === "",
+            }}
+          />
+        </div>
       ) : METHOD[method] ? (
         <div className="border-t border-line pt-4">
           <p className="text-xs text-muted mb-3">Run an unconfirmed check against finalized Base blocks. It needs the token&apos;s address on Base.</p>

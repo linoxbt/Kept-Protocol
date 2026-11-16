@@ -7,7 +7,7 @@ import { db, type Sql } from "@/db/client";
 import type { CommitmentSpec } from "@/core/types";
 import { autoAnchor } from "./anchor";
 import { advanceDemo } from "./demo";
-import { ensureShowcase } from "./showcase";
+import { ensureReplays, ensureShowcase } from "./showcase";
 import { seedCurated } from "./curated";
 import { failStaleJobs } from "./jobs";
 import { recaptureSource, type WatchResult } from "./precedent";
@@ -25,6 +25,7 @@ export interface TickReport {
   demo: { stage: string; detail?: string };
   curated?: { added: string[]; failed: { slug: string; error: string }[] };
   showcase?: { hindcast?: string; grifter?: string; error?: string };
+  replay?: { replayed?: string; error?: string };
   ms: number;
 }
 
@@ -96,6 +97,7 @@ export async function tick(opts: { maxChecks?: number; maxSources?: number; dead
   report.demo = await advanceDemo(sql);
   report.curated = await seedCurated(sql);
   report.showcase = await ensureShowcase(sql);
+  report.replay = await ensureReplays(sql);
   report.ms = Date.now() - started;
   return report;
 }

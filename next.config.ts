@@ -35,6 +35,9 @@ const nextConfig: NextConfig = {
   deploymentId: (process.env.RAILWAY_GIT_COMMIT_SHA ?? process.env.KEPT_CODE_COMMIT)?.slice(0, 12) || undefined,
   cacheComponents: true,
   partialPrefetching: true,
+  async redirects() {
+    return [{ source: "/explore", destination: "/previews", permanent: true }];
+  },
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },

@@ -66,7 +66,7 @@ function Hero() {
               Check promises
             </button>
           </form>
-          <p className="text-xs text-faint mt-3">No login · results are an unconfirmed preview, listed on Explore</p>
+          <p className="text-xs text-faint mt-3">No login · results are an unconfirmed preview, listed under Previews</p>
         </Reveal>
         <Reveal delay={300}>
           <div className="flex items-center justify-center gap-6 mt-10 text-sm">

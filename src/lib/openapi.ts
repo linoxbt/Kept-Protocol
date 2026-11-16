@@ -31,7 +31,7 @@ export function openapi(base: string) {
       "/api/v1/sources/{id}/recapture": { post: { summary: "Re-capture a source; classifies the change (Precedent)", security: admin, parameters: [id("id")], responses: { 200: { description: "Watch result" }, ...errors } } },
       "/api/v1/extractions/{id}": { get: { summary: "Extraction drafts (previews are public)", parameters: [id("id")], responses: { 200: { description: "Extraction" }, ...errors } } },
       "/api/v1/extractions/manual": { post: { summary: "Reviewer-written draft, grounded against a snapshot", security: admin, responses: { 201: { description: "Extraction" }, ...errors } } },
-      "/api/v1/commitments": { post: { summary: "Confirm a draft as version 1 and start monitoring", security: admin, responses: { 201: { description: "Commitment" }, ...errors } } },
+      "/api/v1/commitments": { get: { summary: "List monitored commitments (?status=&kind=&project=&page=, 25 per page), signed", responses: { 200: { description: "Page of commitments" } } }, post: { summary: "Confirm a draft as version 1 and start monitoring", security: admin, responses: { 201: { description: "Commitment" }, ...errors } } },
       "/api/v1/commitments/{id}": { get: { summary: "Commitment with current status", parameters: [id("id")], responses: { 200: { description: "Commitment" }, ...errors } } },
       "/api/v1/commitments/{id}/verify": { post: { summary: "Run a check now, in the background", security: admin, parameters: [id("id")], responses: { 202: { description: "Job to poll at /api/v1/jobs/{id}" }, 409: { description: "A check is already running" }, ...errors } } },
       "/api/v1/commitments/{id}/disputes": {
@@ -58,7 +58,12 @@ export function openapi(base: string) {
       "/api/v1/anchors/{id}": { get: { summary: "An anchor: Merkle root, EAS UID, transaction", parameters: [id("id")], responses: { 200: { description: "Anchor" }, ...errors } } },
       "/api/v1/feed": { get: { summary: "Recent status changes", responses: { 200: { description: "Feed" } } } },
       "/api/v1/webhooks": { post: { summary: "Register a signed webhook; the secret is returned once", security: admin, responses: { 201: { description: "Webhook" }, ...errors } } },
-      "/api/v1/tryit": { post: { summary: "Try-it preview extraction (public, rate-limited; URL previews are listed on /explore as unconfirmed previews)", responses: { 201: { description: "Unconfirmed preview" }, ...errors } } },
+      "/api/v1/previews/{id}/requests": { post: { summary: "Ask Kept to monitor a URL preview (public, 5 per requester per day; a reviewer decides)", responses: { 201: { description: "Request recorded" }, 200: { description: "Already requested" }, ...errors } } },
+      "/api/v1/commitments/{id}/follow": { post: { summary: "Follow one commitment with a signed HTTPS webhook; a one-time code is sent to the endpoint and must be submitted back", responses: { 201: { description: "Follow created (inactive until verified); secret and manage token shown once" }, ...errors } } },
+      "/api/v1/follows/{id}": { post: { summary: "Manage a follow with its token: verify (with the code), status, or stop", responses: { 200: { description: "Follow state" }, ...errors } } },
+      "/api/v1/declarations": { post: { summary: "Declare a wallet: a message signed by the address itself (EOA or ERC-1271), verified, then reviewed", responses: { 201: { description: "Declaration recorded" }, ...errors } } },
+      "/api/v1/contact": { post: { summary: "Pilot or contact request (public, 3 per requester per day)", responses: { 201: { description: "Request recorded" }, ...errors } } },
+      "/api/v1/tryit": { post: { summary: "Try-it preview extraction (public, rate-limited; URL previews are listed on /previews as unconfirmed previews)", responses: { 201: { description: "Unconfirmed preview" }, ...errors } } },
       "/api/v1/tryit/{id}/check": { post: { summary: "Run a preview check on one draft; attribution stays unconfirmed", parameters: [id("id")], responses: { 202: { description: "Job to poll; its result is the unconfirmed preview check" }, ...errors } } },
       "/api/v1/agent/commitments": {
         get: {

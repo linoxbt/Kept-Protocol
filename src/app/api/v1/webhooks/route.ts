@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth";
 import { json, parseBody, Problem, route } from "@/lib/http";
-import { EVENT_TYPES, registerWebhook } from "@/services/webhooks";
+import { EVENT_TYPES, listWebhooks, registerWebhook } from "@/services/webhooks";
 
 const Body = z.object({ url: z.string().url(), events: z.array(z.enum(EVENT_TYPES)).min(1), project_id: z.string().optional().nullable() });
 
@@ -14,4 +14,10 @@ export const POST = route(async (req: Request) => {
   } catch (e) {
     throw new Problem(422, "Invalid webhook", e instanceof Error ? e.message : String(e));
   }
+});
+
+/** Admin: every webhook (including public follows) with delivery counts. Secrets are never returned. */
+export const GET = route(async (req: Request) => {
+  await requireAdmin(req);
+  return json({ data: await listWebhooks() });
 });

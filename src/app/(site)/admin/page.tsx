@@ -11,7 +11,10 @@ import { anchorStatus } from "@/services/anchor";
 import { openDisputeQueue } from "@/services/disputes";
 import { demoStatus } from "@/services/demo";
 import { servAvailable, servStats, spentTodayUsd } from "@/services/serv";
-import { DemoPageForm, ManualDraftForm, NewProjectForm, NewSourceForm, PostButton, WebhookForm } from "@/components/admin-forms";
+import { DeclarationDecision, DemoPageForm, ManualDraftForm, NewProjectForm, NewSourceForm, PostButton, PromoteRequestForm, WebhookForm } from "@/components/admin-forms";
+import { openContacts, openDeclarations } from "@/services/declarations";
+import { openRequests } from "@/services/monitoring";
+import { listWebhooks } from "@/services/webhooks";
 import { DisputeDecision } from "@/components/admin-actions";
 import { ago, fmtDate, Section, Skeleton } from "@/components/ui";
 
@@ -29,13 +32,19 @@ async function Admin() {
   await connection();
   if (!(await isAdminSession())) redirect((await adminSetupOpen()) ? "/admin/setup" : "/admin/login");
   const sql = db();
-  const [projects, sources, extractions, pages, stats, spent, anchor, disputes, snapshots, commitments, demo] = await Promise.all([
+  const [projects, sources, extractions, pages, stats, spent, anchor, disputes, snapshots, commitments, demo, requests, hooks, declarations, contacts] = await Promise.all([
     sql<{ id: string; name: string; slug: string }[]>`select id, name, slug from projects order by created_at desc`,
     sql<{ id: string; url: string | null; kind: string; project: string; last_checked_at: Date | null; status: string }[]>`
       select s.id, s.url, s.kind, p.name as project, s.last_checked_at, s.status from sources s join projects p on p.id = s.project_id order by s.created_at desc limit 30`,
-    sql<{ id: string; status: string; preview: boolean; created_at: Date; drafts: number | null; project: string | null; target_commitment_id: string | null; error: string | null }[]>`
-      select e.id, e.status, e.preview, e.created_at, jsonb_array_length(e.result->'drafts') as drafts, p.name as project, e.target_commitment_id, e.error
-      from extractions e left join projects p on p.id = e.project_id where not e.preview order by e.created_at desc limit 20`,
+    sql<{ id: string; status: string; preview: boolean; created_at: Date; drafts: number | null; undecided: number; project: string | null; target_commitment_id: string | null; error: string | null }[]>`
+      select e.id, e.status, e.preview, e.created_at, jsonb_array_length(e.result->'drafts') as drafts, p.name as project, e.target_commitment_id, e.error,
+        greatest(coalesce(jsonb_array_length(e.result->'drafts'), 0)
+          - (select count(*) from commitment_versions v where v.extraction_id = e.id and v.draft_index is not null)
+          - (select count(*) from draft_rejections r where r.extraction_id = e.id), 0)::int as undecided
+      from extractions e left join projects p on p.id = e.project_id where not e.preview
+      order by (e.status = 'running') desc, (greatest(coalesce(jsonb_array_length(e.result->'drafts'), 0)
+          - (select count(*) from commitment_versions v where v.extraction_id = e.id and v.draft_index is not null)
+          - (select count(*) from draft_rejections r where r.extraction_id = e.id), 0) > 0) desc, e.created_at desc limit 30`,
     sql<{ slug: string; title: string; body: string }[]>`select slug, title, body from demo_pages order by slug`,
     servStats(),
     spentTodayUsd(),
@@ -48,6 +57,10 @@ async function Admin() {
     sql<{ id: string; label: string }[]>`
       select c.id, p.name || ' · ' || c.id as label from commitments c join projects p on p.id = c.project_id order by c.created_at desc limit 100`,
     demoStatus(),
+    openRequests(),
+    listWebhooks(),
+    openDeclarations(),
+    openContacts(),
   ]);
   const signer = getSigner().address;
   return (
@@ -74,6 +87,62 @@ async function Admin() {
         <NewProjectForm />
         {projects.length ? <NewSourceForm projects={projects} /> : <p className="panel p-4 text-sm text-muted">Create a project first.</p>}
       </div>
+
+      <Section title={`Monitoring requests (${requests.length} open)`}>
+        {requests.length ? (
+          <ul className="panel divide-y divide-line text-sm">
+            {requests.map((r) => (
+              <li key={r.id} className="p-4">
+                <div className="flex flex-wrap gap-3 items-center">
+                  <Link className="link mono text-xs" href={`/previews/${r.extraction_id}`}>preview</Link>
+                  <a className="link mono text-xs break-all" href={r.url} target="_blank" rel="noreferrer nofollow">{r.url}</a>
+                  <span className="mono text-xs text-muted">{r.drafts} promise(s), {r.checkable} checkable · {ago(r.created_at)}</span>
+                  {r.contact ? <span className="text-xs text-muted">contact: {r.contact}</span> : null}
+                </div>
+                {r.note ? <p className="mt-1 whitespace-pre-wrap">{r.note}</p> : null}
+                <PromoteRequestForm id={r.id} projects={projects.map((p) => ({ slug: p.slug, name: p.name }))} suggestedName={(() => { try { return new URL(r.url).hostname.replace(/^(www|docs|whitepaper)\./, "").split(".")[0]; } catch { return ""; } })()} suggestedToken={null} />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="panel p-4 text-sm text-muted">No monitoring requests waiting.</p>
+        )}
+      </Section>
+
+      <Section title={`Wallet declarations (${declarations.length} open)`}>
+        {declarations.length ? (
+          <ul className="panel divide-y divide-line text-sm">
+            {declarations.map((d) => (
+              <li key={d.id} className="p-4 space-y-1">
+                <p><span className="text-ink">{d.project}</span> · <span className="mono text-xs">{d.address}</span> · {d.role} · <span className="text-xs text-muted">{ago(d.created_at)}</span></p>
+                <p className="text-xs text-verified">Signature verified when submitted.</p>
+                {d.evidence_url ? <a className="link text-xs mono break-all" href={d.evidence_url} target="_blank" rel="noreferrer nofollow">{d.evidence_url}</a> : null}
+                {d.contact ? <p className="text-xs text-muted">contact: {d.contact}</p> : null}
+                <DeclarationDecision id={d.id} />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="panel p-4 text-sm text-muted">No declarations waiting.</p>
+        )}
+      </Section>
+
+      <Section title={`Pilot and contact requests (${contacts.length})`}>
+        {contacts.length ? (
+          <ul className="panel divide-y divide-line text-sm">
+            {contacts.map((c) => (
+              <li key={c.id} className="p-4 space-y-1">
+                <p><span className="mono text-[10px] border border-line-strong px-1.5 mr-2">{c.kind}</span>{c.name}{c.organisation ? ` · ${c.organisation}` : ""} · <span className="text-xs text-muted">{ago(c.created_at)}</span></p>
+                <p className="text-xs">contact: {c.contact}</p>
+                <p className="whitespace-pre-wrap text-muted">{c.message}</p>
+                <PostButton endpoint={`/api/v1/contact/${c.id}`} label="Mark handled" />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="panel p-4 text-sm text-muted">No requests waiting.</p>
+        )}
+      </Section>
 
       <Section title={`Disputes (${disputes.length} open)`}>
         {disputes.length ? (
@@ -103,13 +172,13 @@ async function Admin() {
 
       <Section title="Extractions awaiting review">
         <table className="data stack panel">
-          <thead><tr><th>Extraction</th><th>Project</th><th>Drafts</th><th>Status</th><th>When</th></tr></thead>
+          <thead><tr><th>Extraction</th><th>Project</th><th>Drafts (undecided)</th><th>Status</th><th>When</th></tr></thead>
           <tbody>
             {extractions.map((e) => (
               <tr key={e.id}>
                 <td><Link className="link mono text-xs" href={`/admin/extractions/${e.id}`}>{e.id}</Link>{e.target_commitment_id ? <span className="mono text-[10px] text-atrisk ml-2">proposes a new version</span> : null}</td>
                 <td className="text-sm">{e.project}</td>
-                <td className="mono">{e.drafts ?? 0}</td>
+                <td className={`mono ${e.undecided ? "text-atrisk" : "text-muted"}`}>{e.drafts ?? 0} ({e.undecided})</td>
                 <td className="mono text-xs">{e.status}{e.error ? <span className="text-breached"> · {e.error.slice(0, 80)}</span> : null}</td>
                 <td className="mono text-xs text-muted">{ago(e.created_at)}</td>
               </tr>
@@ -142,8 +211,26 @@ async function Admin() {
             <DemoPageForm slug="" title="" body="" />
           </div>
         </Section>
-        <Section title="Webhooks">
+        <Section title={`Webhooks (${hooks.length})`}>
           <WebhookForm />
+          {hooks.length ? (
+            <ul className="panel divide-y divide-line text-xs mt-4">
+              {hooks.map((h) => (
+                <li key={h.id} className="p-3 space-y-1">
+                  <p className="mono break-all">{h.url}</p>
+                  <p className="text-muted">
+                    {h.follower ? `follow of ${h.commitment_id}` : h.project_id ? `project ${h.project_id}` : "all projects"} · {h.active ? <span className="text-verified">active</span> : "inactive"} · {h.delivered} delivered,{" "}
+                    {h.pending} pending, {h.failed} failed
+                  </p>
+                  {h.last_error ? <p className="text-atrisk">last error: {h.last_error}</p> : null}
+                  <div className="flex gap-2">
+                    <PostButton endpoint={`/api/v1/webhooks/${h.id}`} body={{ action: "test" }} label="Send test" />
+                    <PostButton endpoint={`/api/v1/webhooks/${h.id}`} body={{ action: h.active ? "deactivate" : "activate" }} label={h.active ? "Deactivate" : "Activate"} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </Section>
       </div>
     </div>

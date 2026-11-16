@@ -62,7 +62,8 @@ export async function deliverOutbox(limit = 50, sql: Sql = db()): Promise<{ queu
     const hooks = await sql<{ id: string }[]>`
       select w.id from webhooks w
       left join commitments c on c.id = ${e.commitment_id}
-      where w.active and ${e.event_type} = any(w.events) and (w.project_id is null or w.project_id = c.project_id)`;
+      where w.active and ${e.event_type} = any(w.events) and (w.project_id is null or w.project_id = c.project_id)
+        and (w.commitment_id is null or w.commitment_id = ${e.commitment_id})`;
     for (const h of hooks) {
       await sql`insert into webhook_deliveries (webhook_id, outbox_id, status) values (${h.id}, ${e.id}, 'pending') on conflict do nothing`;
       queued++;
@@ -119,4 +120,42 @@ export async function deliverOutbox(limit = 50, sql: Sql = db()): Promise<{ queu
     }
   }
   return { queued, delivered, failed };
+}
+
+/** Admin: every webhook with its delivery counts and last error. */
+export async function listWebhooks(sql: Sql = db()) {
+  return sql<{ id: string; url: string; events: string[]; project_id: string | null; commitment_id: string | null; follower: boolean; active: boolean; created_at: Date; delivered: number; pending: number; failed: number; last_error: string | null }[]>`
+    select w.id, w.url, w.events, w.project_id, w.commitment_id, w.follower, w.active, w.created_at,
+      count(*) filter (where d.status = 'delivered')::int as delivered,
+      count(*) filter (where d.status = 'pending')::int as pending,
+      count(*) filter (where d.status = 'failed')::int as failed,
+      (select last_error from webhook_deliveries x where x.webhook_id = w.id and x.last_error is not null order by x.next_attempt_at desc limit 1) as last_error
+    from webhooks w left join webhook_deliveries d on d.webhook_id = w.id
+    group by w.id order by w.created_at desc limit 100`;
+}
+
+export async function setWebhookActive(id: string, active: boolean, sql: Sql = db()) {
+  const r = await sql`update webhooks set active = ${active} where id = ${id}`;
+  if (!r.count) throw new Error("no such webhook");
+}
+
+/** Admin: send a signed test event now and report the endpoint's answer. */
+export async function testWebhook(id: string, sql: Sql = db()): Promise<{ ok: boolean; status: number | null; error: string | null }> {
+  const [w] = await sql<{ url: string; secret: string }[]>`select url, secret from webhooks where id = ${id}`;
+  if (!w) throw new Error("no such webhook");
+  const body = JSON.stringify({ id: `evt_test_${Date.now()}`, type: "kept.test", created_at: new Date().toISOString(), data: { webhook_id: id } });
+  try {
+    checkUrl(w.url);
+    const res = await undiciFetch(w.url, {
+      method: "POST",
+      headers: { "content-type": "application/json", "kept-webhook-signature": signWebhook(openValue(w.secret), body), "user-agent": "Kept-Webhooks/1.0" },
+      body,
+      redirect: "manual",
+      dispatcher: safeDispatcher,
+      signal: AbortSignal.timeout(10_000),
+    });
+    return { ok: res.ok, status: res.status, error: res.ok ? null : `HTTP ${res.status}` };
+  } catch (e) {
+    return { ok: false, status: null, error: e instanceof Error ? e.message : String(e) };
+  }
 }

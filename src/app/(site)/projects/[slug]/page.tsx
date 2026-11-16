@@ -8,6 +8,14 @@ import { StatusChip } from "@/components/status";
 import { ago, DemoBadge, Empty, fmtDate, Section, Skeleton } from "@/components/ui";
 import { projectCommitments, projectSources } from "@/services/queries";
 import { getProjectBySlugOrId } from "@/services/sources";
+import type { Metadata } from "next";
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const p = await getProjectBySlugOrId((await params).slug).catch(() => null);
+  if (!p) return { title: "Project" };
+  const description = p.description ?? `Public promises by ${p.name}, checked onchain by Kept.`;
+  return { title: p.name, description, openGraph: { title: `${p.name} · Kept`, description } };
+}
 
 export default function ProjectPage({ params }: { params: Promise<{ slug: string }> }) {
   return (

@@ -337,3 +337,93 @@ export function ConfirmDraftForm({ extractionId, draft, targetCommitmentId }: { 
     </form>
   );
 }
+
+/** Promote a monitoring request: reuse a project by slug or create one; the extraction then goes to review. */
+export function PromoteRequestForm({ id, projects, suggestedName, suggestedToken }: { id: string; projects: { slug: string; name: string }[]; suggestedName: string; suggestedToken: string | null }) {
+  const a = useAction();
+  const [slug, setSlug] = useState("");
+  const [name, setName] = useState(suggestedName);
+  const [token, setToken] = useState(suggestedToken ?? "");
+  const [reason, setReason] = useState("");
+  return (
+    <div className="grid md:grid-cols-2 gap-3 mt-3">
+      <form
+        className="space-y-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void a.run(
+            async () => {
+              const r = await post(`/api/v1/monitoring-requests/${id}`, { action: "promote", project_slug: slug || null, name: slug ? null : name, token_address: slug ? null : token || null });
+              return r.review as string;
+            },
+            (r) => (typeof r === "string" ? r : null),
+          );
+        }}
+      >
+        <p className="label">Promote to monitoring</p>
+        <select className="input text-sm" value={slug} onChange={(e) => setSlug(e.target.value)}>
+          <option value="">New project…</option>
+          {projects.map((p) => <option key={p.slug} value={p.slug}>{p.name}</option>)}
+        </select>
+        {slug ? null : (
+          <>
+            <input className="input text-sm" placeholder="Project name" required value={name} onChange={(e) => setName(e.target.value)} />
+            <input className="input mono text-xs" placeholder="Token address on Base (optional)" value={token} onChange={(e) => setToken(e.target.value)} />
+          </>
+        )}
+        <button className="btn" disabled={a.busy}>{a.busy ? "capturing…" : "Capture source and extract"}</button>
+      </form>
+      <form
+        className="space-y-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void a.run(async () => {
+            await post(`/api/v1/monitoring-requests/${id}`, { action: "decline", reason });
+            return "declined";
+          });
+        }}
+      >
+        <p className="label">Decline</p>
+        <textarea className="input text-sm h-24" placeholder="Reason (kept on the record)" minLength={5} required value={reason} onChange={(e) => setReason(e.target.value)} />
+        <button className="btn btn-quiet" disabled={a.busy}>Decline</button>
+      </form>
+      <div className="md:col-span-2"><Msg msg={a.msg} /></div>
+    </div>
+  );
+}
+
+/** Record that a draft will not be confirmed. */
+export function RejectDraftForm({ extractionId, index }: { extractionId: string; index: number }) {
+  const a = useAction();
+  const [reason, setReason] = useState("");
+  return (
+    <form
+      className="flex flex-col sm:flex-row gap-2 mt-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void a.run(async () => {
+          await post(`/api/v1/extractions/${extractionId}/drafts/${index}/reject`, { reason });
+          return "rejected";
+        });
+      }}
+    >
+      <input className="input text-xs" placeholder="Reason for not confirming (min. 5 characters)" minLength={5} required value={reason} onChange={(e) => setReason(e.target.value)} />
+      <button className="btn btn-quiet whitespace-nowrap text-xs" disabled={a.busy}>Reject draft</button>
+      <Msg msg={a.msg} />
+    </form>
+  );
+}
+
+/** Accept or reject a signed wallet declaration, with a note kept on the record. */
+export function DeclarationDecision({ id }: { id: string }) {
+  const a = useAction();
+  const [note, setNote] = useState("");
+  return (
+    <div className="flex flex-col sm:flex-row gap-2 mt-2">
+      <input className="input text-xs" placeholder="Note (what you checked)" value={note} onChange={(e) => setNote(e.target.value)} />
+      <button className="btn text-xs" disabled={a.busy || note.length < 3} onClick={() => void a.run(async () => { await post(`/api/v1/declarations/${id}`, { action: "accept", note }); return "accepted"; })}>Accept</button>
+      <button className="btn btn-quiet text-xs" disabled={a.busy || note.length < 3} onClick={() => void a.run(async () => { await post(`/api/v1/declarations/${id}`, { action: "reject", note }); return "rejected"; })}>Reject</button>
+      <Msg msg={a.msg} />
+    </div>
+  );
+}

@@ -20,7 +20,7 @@ Built for SERV Hackathon Edition 02 (Open Track).
 | **Precedent** | Sources are re-captured and diffed. Wording-only changes attach a snapshot; policy changes become a new version only after review. Old versions are frozen at the database level. The retroactive-revision flag shows when a revision excuses an earlier transfer. |
 | **Hindcast** | Replays every version over the same historical evidence and shows where the outcomes diverge, with a signed replay receipt. |
 | **Grifter** | A 23-case adversarial suite against Kept's own pipeline: injection, ambiguous quantifiers, contradictions, unit and date traps, wallet poisoning, satisfied-looking-but-not, evidence spoofing, finality and provider disagreement. |
-| **Try-it mode** | Anyone can test any URL without an account. Each preview opens a detail page and is labelled *Unconfirmed preview*. Previews of public URLs are listed on `/explore` for 30 days (never in the commitments feed); pasted text stays private to its link and expires in 24 h. A preview can never show *Breached*. |
+| **Try-it mode** | Anyone can test any URL without an account. Each preview opens a detail page and is labelled *Unconfirmed preview*. Previews of public URLs are listed on `/previews` for 30 days (never in the commitments feed); pasted text stays private to its link and expires in 24 h. A preview can never show *Breached*. |
 | **Disputes** | Anyone can dispute a record with evidence. A reviewer accepts it (the commitment shows *Disputed*, with the mechanical result still in the reason), rejects it, or resolves it; every decision is kept and shown. |
 | **Agent API** (x402) | `GET /api/v1/agent/commitments?token=…` is paid per query over x402 and returns signed records with `coverage: none | partial | full`, so "no record" is never read as "clean". |
 
@@ -33,6 +33,24 @@ Built for SERV Hackathon Edition 02 (Open Track).
 - Kept never says "fraud", "scam", "rug" or "lied". A breach is a mechanical fact about a stated condition.
 
 ---
+
+### Public pages
+
+| Page | What it is for |
+|---|---|
+| `/projects`, `/projects/{slug}` | Monitored projects and their commitments |
+| `/commitments` | Every monitored commitment, filterable by status and kind, paginated |
+| `/commitments/{id}` | One commitment: status, evidence, history, versions, Hindcast, disputes, and Follow (signed webhook) |
+| `/receipts/{id}` | A signed receipt, with in-browser verification |
+| `/activity` | Every status change, filterable, each with its receipt |
+| `/try` → `/previews/{id}` | Check any public page; the preview page follows the extraction live and lets anyone request monitoring |
+| `/previews` | Every unconfirmed preview of a public URL (30 days) |
+| `/search` | Look up a project, ticker, token or any wallet named in a commitment ("no record" is not "clean") |
+| `/methodology` | How Kept works: every status, attribution, finality, methods, versions, receipts |
+| `/status` | Live health, the signing key, and every anchor on Base |
+| `/for-projects` | Declare a wallet (signed message, reviewed), respond to a record, pilot pricing |
+
+Records get page titles and share cards (Open Graph images) generated from their live status.
 
 ## How Kept uses SERV Reasoning
 

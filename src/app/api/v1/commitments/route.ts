@@ -38,3 +38,11 @@ export const POST = route(async (req: Request) => {
   const job = b.verify_now ? await startCheckJob(commitmentId, "confirm", (w) => after(w)) : null;
   return json({ commitment_id: commitmentId, first_check: job ? { job_id: job.id, poll: job.poll, status: "running" } : null }, { status: 201 });
 });
+
+/** Public list of monitored commitments: ?status=&kind=&project=&page= (25 per page), signed. */
+export const GET = route(async (req: Request) => {
+  const u = new URL(req.url);
+  const { listCommitments } = await import("@/services/listing");
+  const r = await listCommitments({ status: u.searchParams.get("status"), kind: u.searchParams.get("kind"), project: u.searchParams.get("project"), page: Number(u.searchParams.get("page")) || 1 });
+  return json({ data: r.rows, page: r.page, pages: r.pages, total: r.total }, { sign: true, cache: "public, max-age=15" });
+});

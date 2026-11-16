@@ -14,7 +14,16 @@ import { canonicalJson } from "@/receipts/receipt";
 import { inclusionProof } from "@/services/anchor";
 import { getReceipt } from "@/services/receipts";
 
-export const metadata = { title: "Receipt" };
+import type { Metadata } from "next";
+import { receiptShare, statusLabel } from "@/services/share";
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const r = await receiptShare((await params).id).catch(() => null);
+  if (!r) return { title: "Receipt" };
+  const title = `Receipt ${r.id}${r.project ? ` · ${r.project}` : ""}`;
+  const description = `${r.status ? `${statusLabel(r.status, !!r.final)}. ` : ""}${r.summary ?? ""} Signed${r.anchored ? " and anchored on Base" : ""}; verify it yourself.`.trim();
+  return { title, description, openGraph: { title: `${title} · Kept`, description }, twitter: { card: "summary_large_image" } };
+}
 
 export default function ReceiptPage({ params }: { params: Promise<{ id: string }> }) {
   return (

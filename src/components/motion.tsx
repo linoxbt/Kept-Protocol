@@ -27,17 +27,22 @@ export function Reveal({ children, delay = 0, className = "" }: { children: Reac
 }
 
 /** Counts up to a number once, when visible. */
+/**
+ * A number that counts up when it scrolls into view. The real value is rendered on the server (so
+ * crawlers, no-JS visitors and a failed script never see 0); the count-up only happens for numbers
+ * that start off-screen, so a visible number never flashes back to zero.
+ */
 export function Ticker({ value, className = "" }: { value: number; className?: string }) {
   const ref = useRef<HTMLSpanElement>(null);
-  const [shown, setShown] = useState(0);
+  const [shown, setShown] = useState(value);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     let raf = 0;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      raf = requestAnimationFrame(() => setShown(value));
-      return () => cancelAnimationFrame(raf);
-    }
+    const r = el.getBoundingClientRect();
+    const visible = r.top < window.innerHeight && r.bottom > 0;
+    if (visible || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    raf = requestAnimationFrame(() => setShown(0));
     const io = new IntersectionObserver(([e]) => {
       if (!e.isIntersecting) return;
       io.disconnect();
