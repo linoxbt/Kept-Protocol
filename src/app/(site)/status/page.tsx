@@ -54,7 +54,8 @@ async function Status() {
   }
   const signer = getSigner().address;
   const [anchor, lastCheck, counts, anchors, head] = await Promise.all([
-    anchorStatus(sql).catch(() => null),
+    // The operator balance is an RPC call: never let a slow provider hold the page.
+    Promise.race([anchorStatus(sql), new Promise<null>((r) => setTimeout(() => r(null), 4000))]).catch(() => null),
     sql<{ at: Date | null }[]>`select max(finished_at) as at from checks`.then((r) => r[0]?.at ?? null).catch(() => null),
     sql<{ commitments: number; receipts: number; anchored: number }[]>`
       select (select count(*)::int from commitments) as commitments, (select count(*)::int from receipts) as receipts, (select count(*)::int from receipts where anchor_id is not null) as anchored`
