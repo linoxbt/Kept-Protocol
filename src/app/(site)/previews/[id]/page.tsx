@@ -170,7 +170,7 @@ async function Preview({ params }: { params: Promise<{ id: string }> }) {
       {ex.status === "running" ? (
         <section className="panel p-8 mb-10" aria-live="polite">
           <p className="subtitle mb-2">Reading the page…</p>
-          <p className="text-sm text-muted mb-6">This usually takes 1 to 5 minutes. The page updates on its own.</p>
+          <p className="text-sm text-muted mb-6">This usually takes 1 to 8 minutes. The page updates on its own.</p>
           <ol className="grid sm:grid-cols-3 gap-4 text-sm">
             <li className="border border-line p-4"><p className="label mb-1">1 · Locate</p>SERV finds every promise and quotes it word for word.</li>
             <li className="border border-line p-4"><p className="label mb-1">2 · Extract</p>Kronos and Shadow Agent turn each quote into fields.</li>

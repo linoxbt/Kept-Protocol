@@ -74,7 +74,7 @@ export function TryIt() {
           </>
         )}
         <button className="btn" disabled={busy}>{busy ? "Starting…" : "Extract commitments"}</button>
-        {busy ? <p className="text-xs text-muted">Opening the preview page. SERV usually needs 1 to 5 minutes to read a page; you can watch it there.</p> : null}
+        {busy ? <p className="text-xs text-muted">Opening the preview page. SERV usually needs 1 to 8 minutes to read a page; you can watch it there.</p> : null}
       </form>
       {error ? <p className="border border-breached text-breached p-3 text-sm mb-6" role="alert">{error}</p> : null}
     </div>
