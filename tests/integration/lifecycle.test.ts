@@ -23,6 +23,7 @@ import { addSource, captureForSource, createProject, storeSnapshot } from "@/ser
 import { runCheck } from "@/services/verify";
 import { pendingRoot, withSessionLock } from "@/services/anchor";
 import { ensureShowcase } from "@/services/showcase";
+import { getPublicPreview, listPublicPreviews, publicPreviewStats } from "@/services/previews";
 import { claimDue } from "@/services/monitor";
 import { migrate } from "../../scripts/migrate";
 import { runMethod } from "@/core/methods";
@@ -491,4 +492,29 @@ describe.skipIf(!DB_UP)("Kept lifecycle", () => {
       resetEnvCache();
     }
   }, 30_000);
+
+  it("lists previews of public URLs on Explore, never pasted text, and hides expired ones", async () => {
+    const drafts = [
+      { index: 0, fields: { category: "token_lock" }, classification: { method_id: "erc20_outflow_v1" } },
+      { index: 1, fields: { category: "burn" }, classification: { method_id: "none" } },
+    ];
+    await sql`insert into extractions (id, preview_text, preview_url, content_sha256, preview, status, result, expires_at) values
+      ('kx_pub', 't', 'https://docs.example.xyz/tokenomics', 'a', true, 'done', ${sql.json({ drafts, serv_calls: 7, previews: { "0": { status: "verified" } } } as never)}, now() + interval '30 days'),
+      ('kx_priv', 'secret pasted text', null, 'b', true, 'done', ${sql.json({ drafts, serv_calls: 3 } as never)}, now() + interval '1 day'),
+      ('kx_old', 't', 'https://old.example.xyz/', 'c', true, 'done', ${sql.json({ drafts: [], serv_calls: 1 } as never)}, now() - interval '1 minute')`;
+    const list = await listPublicPreviews(50, sql);
+    const ids = list.map((x) => x.id);
+    expect(ids).toContain("kx_pub");
+    expect(ids).not.toContain("kx_priv");
+    expect(ids).not.toContain("kx_old");
+    const pub = list.find((x) => x.id === "kx_pub")!;
+    expect(pub).toMatchObject({ drafts: 2, checkable: 1, serv_calls: 7, checks: ["verified"] });
+    expect([...pub.categories].sort()).toEqual(["burn", "token_lock"]);
+    const stats = await publicPreviewStats(sql);
+    expect(stats.commitments).toBeGreaterThanOrEqual(2);
+    expect(stats.checks).toBeGreaterThanOrEqual(1);
+    // A pasted-text preview stays reachable through its own link; an expired one is gone.
+    expect((await getPublicPreview("kx_priv", sql))?.id).toBe("kx_priv");
+    expect(await getPublicPreview("kx_old", sql)).toBeNull();
+  });
 });

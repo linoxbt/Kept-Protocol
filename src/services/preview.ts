@@ -1,9 +1,10 @@
 /**
  * Try-it mode. Anyone can paste a URL or text and see what Kept extracts and what the chain
  * shows, without an account. Guard rails:
- *  - every draft and result is an "Unconfirmed preview": never published, never in the feed;
+ *  - every draft and result is an "Unconfirmed preview": never reviewed, never in the commitments feed;
  *  - every subject is `unconfirmed`, so the worst status a preview can show is At risk;
- *  - previews expire after 24 hours;
+ *  - previews of public URLs are listed on /explore for 30 days (noindex); pasted text is reachable
+ *    only through its own link and expires after 24 hours;
  *  - per-requester hourly limit and the shared daily SERV budget.
  */
 import { db, type Sql } from "@/db/client";

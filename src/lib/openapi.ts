@@ -58,7 +58,7 @@ export function openapi(base: string) {
       "/api/v1/anchors/{id}": { get: { summary: "An anchor: Merkle root, EAS UID, transaction", parameters: [id("id")], responses: { 200: { description: "Anchor" }, ...errors } } },
       "/api/v1/feed": { get: { summary: "Recent status changes", responses: { 200: { description: "Feed" } } } },
       "/api/v1/webhooks": { post: { summary: "Register a signed webhook; the secret is returned once", security: admin, responses: { 201: { description: "Webhook" }, ...errors } } },
-      "/api/v1/tryit": { post: { summary: "Try-it preview extraction (public, rate-limited, never published)", responses: { 201: { description: "Unconfirmed preview" }, ...errors } } },
+      "/api/v1/tryit": { post: { summary: "Try-it preview extraction (public, rate-limited; URL previews are listed on /explore as unconfirmed previews)", responses: { 201: { description: "Unconfirmed preview" }, ...errors } } },
       "/api/v1/tryit/{id}/check": { post: { summary: "Run a preview check on one draft; attribution stays unconfirmed", parameters: [id("id")], responses: { 202: { description: "Job to poll; its result is the unconfirmed preview check" }, ...errors } } },
       "/api/v1/agent/commitments": {
         get: {

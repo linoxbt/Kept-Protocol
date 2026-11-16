@@ -19,6 +19,9 @@ import { assertBudget, budgetedDeps, servClient } from "./serv";
 import { withHeartbeat } from "./jobs";
 import { Conflict, Invalid, NotFound } from "./sources";
 
+/** Previews of public URLs are listed on Explore for this long; pasted-text previews last 24 hours. */
+export const PUBLIC_PREVIEW_DAYS = 30;
+
 export interface ExtractionRow {
   id: string;
   project_id: string | null;
@@ -64,7 +67,7 @@ export async function runAndStoreExtraction(
   await sql`insert into extractions (id, project_id, source_id, snapshot_id, preview_text, preview_url, content_sha256, preview, status, requester_hash, target_commitment_id, expires_at)
             values (${id}, ${input.project?.id ?? null}, ${input.sourceId}, ${input.snapshot?.id ?? null}, ${input.preview?.text ?? null}, ${input.preview?.url ?? null},
                     ${input.preview?.sha256 ?? input.snapshot!.content_sha256}, ${!!input.preview}, 'running', ${input.preview?.requesterHash ?? null},
-                    ${input.targetCommitmentId ?? null}, ${input.preview ? new Date(Date.now() + 24 * 3600_000) : null})`;
+                    ${input.targetCommitmentId ?? null}, ${input.preview ? new Date(Date.now() + (input.preview.url ? PUBLIC_PREVIEW_DAYS * 86_400_000 : 24 * 3600_000)) : null})`;
   const work = async (): Promise<ExtractionRow> => {
     try {
       const result = await withHeartbeat("extractions", id, sql, () => runExtraction(text, projectContext(input.project), { serv: client, ...budgetedDeps(id, sql) }));

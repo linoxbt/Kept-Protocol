@@ -8,7 +8,7 @@ export const maxDuration = 300;
 
 const Body = z.object({ url: z.string().url().optional(), text: z.string().min(20).max(50_000).optional() }).refine((b) => b.url || b.text, "send a url or a text");
 
-/** Try-it mode: public, rate-limited, results labelled "Unconfirmed preview" and never published. */
+/** Try-it mode: public, rate-limited, results labelled "Unconfirmed preview"; URL previews are listed on /explore, never in the commitments feed. */
 export const POST = route(async (req: Request) => {
   const b = await parseBody(req, Body);
   const ex = await startPreview({ url: b.url, text: b.text, requester: requesterHash(clientIp(req)) }, undefined, (work) => after(work));

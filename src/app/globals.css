@@ -404,4 +404,13 @@ del.diff {
   table.data.stack td.hide-sm {
     display: none;
   }
+  table.data.stack td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-family: var(--font-geist-mono), monospace;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-faint);
+  }
 }

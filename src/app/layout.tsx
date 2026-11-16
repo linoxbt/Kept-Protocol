@@ -13,6 +13,7 @@ export const metadata: Metadata = {
 
 const NAV = [
   ["Projects", "/projects"],
+  ["Explore", "/explore"],
   ["Try it", "/try"],
   ["Grifter", "/grifter"],
   ["API", "/docs"],
@@ -65,6 +66,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
               <p className="label mb-3">Product</p>
               <Link className="block text-sm text-muted hover:text-ink" href="/projects">Projects</Link>
               <Link className="block text-sm text-muted hover:text-ink" href="/try">Try it</Link>
+              <Link className="block text-sm text-muted hover:text-ink" href="/explore">Explore</Link>
               <Link className="block text-sm text-muted hover:text-ink" href="/grifter">Grifter</Link>
             </div>
             <div className="md:col-span-2 space-y-2.5">
